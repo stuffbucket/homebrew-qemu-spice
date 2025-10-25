@@ -14,7 +14,31 @@ QEMU 10.1.2 with SPICE protocol support for Apple Silicon macOS.
 
 ## Installation
 
-### Using Makefile (Recommended)
+### Using Homebrew Tap (Recommended)
+
+Now that the formulas are published on GitHub, this is the easiest way:
+
+```bash
+# Unlink existing QEMU if installed
+brew unlink qemu 2>/dev/null || true
+
+# Add the tap
+brew tap stuffbucket/qemu-spice
+
+# Install dependencies
+brew install --HEAD stuffbucket/qemu-spice/libepoxy-egl
+brew install --HEAD stuffbucket/qemu-spice/virglrenderer
+brew install stuffbucket/qemu-spice/spice-server
+
+# Install QEMU with SPICE
+brew install stuffbucket/qemu-spice/qemu-spice
+```
+
+**Build time:** 30-45 minutes on Apple Silicon.
+
+### For Development: Using Makefile
+
+If you're developing or contributing to the formulas:
 
 ```bash
 # Clone the repository
@@ -40,26 +64,6 @@ make test
 # Check installation status
 make status
 ```
-
-### Using Homebrew Tap
-
-```bash
-# Unlink existing QEMU if installed
-brew unlink qemu 2>/dev/null || true
-
-# Add the tap
-brew tap stuffbucket/qemu-spice
-
-# Install dependencies
-brew install --HEAD stuffbucket/qemu-spice/libepoxy-egl
-brew install --HEAD stuffbucket/qemu-spice/virglrenderer
-brew install stuffbucket/qemu-spice/spice-server
-
-# Install QEMU with SPICE
-brew install stuffbucket/qemu-spice/qemu-spice
-```
-
-**Build time:** 30-45 minutes on Apple Silicon.
 
 ## Download Caching
 

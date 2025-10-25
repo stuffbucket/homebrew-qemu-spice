@@ -2,8 +2,9 @@ class LibepoxyEgl < Formula
   desc "Library for handling OpenGL function pointer management (with EGL support for macOS)"
   homepage "https://github.com/anholt/libepoxy"
   url "https://github.com/anholt/libepoxy/archive/refs/tags/1.5.10.tar.gz"
-  sha256 "072cda4b59dd098bba8c2363a6247299db1fa89411dc221c8b81b8ee8192e623"
+  sha256 "a7ced37f4102b745ac86d6a70a9da399cc139ff168ba6b8002b4d8d43c900c15"
   license "MIT"
+  head "https://github.com/anholt/libepoxy.git", branch: "master"
 
   depends_on "meson" => :build
   depends_on "ninja" => :build
@@ -11,12 +12,6 @@ class LibepoxyEgl < Formula
   depends_on "freeglut"
 
   conflicts_with "libepoxy", because: "this formula provides libepoxy with EGL support enabled"
-
-  # Patch to enable EGL on macOS (required for SPICE OpenGL support)
-  patch do
-    url "https://github.com/anholt/libepoxy/pull/239.patch"
-    sha256 "e88d7fc5c384f93a5c4659c5fc1ac9e5e3d5bb964d5d54bdb97e4e46c1c9b1d4"
-  end
 
   # Enable EGL platform support on macOS/Darwin
   patch :DATA

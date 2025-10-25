@@ -12,9 +12,29 @@ Complete installation instructions for QEMU with SPICE support on Apple Silicon.
 
 ## Installation Methods
 
-### Method 1: Using Makefile (Recommended)
+### Method 1: GitHub Tap (Recommended)
 
-The easiest way to build from this repository:
+Now that the formulas are published, this is the easiest method:
+
+```bash
+# 1. Unlink any existing QEMU installation
+brew unlink qemu 2>/dev/null || true
+
+# 2. Add the tap
+brew tap stuffbucket/qemu-spice
+
+# 3. Install dependencies in order
+brew install --HEAD stuffbucket/qemu-spice/libepoxy-egl
+brew install --HEAD stuffbucket/qemu-spice/virglrenderer
+brew install stuffbucket/qemu-spice/spice-server
+
+# 4. Install QEMU with SPICE
+brew install stuffbucket/qemu-spice/qemu-spice
+```
+
+### Method 2: Development with Makefile
+
+For developers or contributors working on the formulas:
 
 ```bash
 # Clone the repository
@@ -33,27 +53,7 @@ make verify
 
 See `make help` for all available targets (test, status, clean-cache, etc.).
 
-### Method 2: Local Tap
-
-This method uses the formulas directly from this directory:
-
-```bash
-# 1. Unlink any existing QEMU installation
-brew unlink qemu 2>/dev/null || true
-
-# 2. Add the tap
-brew tap stuffbucket/qemu-spice
-
-# 3. Install dependencies in order
-brew install --HEAD stuffbucket/qemu-spice/libepoxy-egl
-brew install --HEAD stuffbucket/qemu-spice/virglrenderer
-brew install stuffbucket/qemu-spice/spice-server
-
-# 4. Install QEMU with SPICE
-brew install stuffbucket/qemu-spice/qemu-spice
-```
-
-### Method 3: Create a GitHub Tap
+### Method 3: Alternative - Local Tap
 
 If you want to share this tap or install on multiple machines:
 

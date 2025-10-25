@@ -63,20 +63,20 @@ info: ## Show formula information
 	@for formula in $(FORMULAS); do \
 		echo ""; \
 		echo "$(YELLOW)$$formula:$(NC)"; \
-		brew info $(FORMULA_DIR)/$$formula.rb 2>/dev/null || \
+		brew info stuffbucket/qemu-spice/$$formula 2>/dev/null || \
 			echo "  Formula not found"; \
 	done
 
 deps: ## Show dependency tree
 	@echo "$(BLUE)=== Dependency Tree ===$(NC)"
-	@brew deps --tree $(FORMULA_DIR)/qemu-spice.rb
+	@brew deps --tree stuffbucket/qemu-spice/qemu-spice
 
 # Individual formula targets
 libepoxy-egl: check-deps ## Build libepoxy-egl (~2-3 min)
 	@echo "$(BLUE)=== Building libepoxy-egl ===$(NC)"
 	@echo "OpenGL function pointer library with EGL support"
 	@START=$$(date +%s); \
-	brew install --HEAD --build-from-source --verbose $(FORMULA_DIR)/libepoxy-egl.rb && \
+	brew install --HEAD --build-from-source --verbose stuffbucket/qemu-spice/libepoxy-egl && \
 	END=$$(date +%s) && \
 	DURATION=$$((END - START)) && \
 	echo "$(GREEN)✓ libepoxy-egl built in $${DURATION}s$(NC)" || \
@@ -86,7 +86,7 @@ virglrenderer: libepoxy-egl ## Build virglrenderer (~3-5 min)
 	@echo "$(BLUE)=== Building virglrenderer ===$(NC)"
 	@echo "Virtual GPU renderer for macOS"
 	@START=$$(date +%s); \
-	brew install --HEAD --build-from-source --verbose $(FORMULA_DIR)/virglrenderer.rb && \
+	brew install --HEAD --build-from-source --verbose stuffbucket/qemu-spice/virglrenderer && \
 	END=$$(date +%s) && \
 	DURATION=$$((END - START)) && \
 	echo "$(GREEN)✓ virglrenderer built in $${DURATION}s$(NC)" || \
@@ -96,7 +96,7 @@ spice-server: virglrenderer ## Build spice-server (~5-7 min)
 	@echo "$(BLUE)=== Building spice-server ===$(NC)"
 	@echo "SPICE protocol server library"
 	@START=$$(date +%s); \
-	brew install --build-from-source --verbose $(FORMULA_DIR)/spice-server.rb && \
+	brew install --build-from-source --verbose stuffbucket/qemu-spice/spice-server && \
 	END=$$(date +%s) && \
 	DURATION=$$((END - START)) && \
 	echo "$(GREEN)✓ spice-server built in $${DURATION}s$(NC)" || \
@@ -107,7 +107,7 @@ qemu-spice: spice-server ## Build qemu-spice (~25-35 min)
 	@echo "QEMU 10.1.2 with SPICE support and Apple Silicon optimizations"
 	@echo "$(YELLOW)⏱ This will take 25-35 minutes...$(NC)"
 	@START=$$(date +%s); \
-	brew install --build-from-source --verbose $(FORMULA_DIR)/qemu-spice.rb && \
+	brew install --build-from-source --verbose stuffbucket/qemu-spice/qemu-spice && \
 	END=$$(date +%s) && \
 	DURATION=$$((END - START)) && \
 	MINUTES=$$((DURATION / 60)) && \
@@ -128,11 +128,7 @@ reinstall: ## Reinstall all formulas (forces rebuild)
 	@echo "$(BLUE)=== Reinstalling All Formulas ===$(NC)"
 	@for formula in $(FORMULAS); do \
 		echo "Reinstalling $$formula..."; \
-		if [ "$$formula" = "libepoxy-egl" ] || [ "$$formula" = "virglrenderer" ]; then \
-			brew reinstall --HEAD --build-from-source $(FORMULA_DIR)/$$formula.rb; \
-		else \
-			brew reinstall --build-from-source $(FORMULA_DIR)/$$formula.rb; \
-		fi; \
+		brew reinstall --build-from-source stuffbucket/qemu-spice/$$formula; \
 	done
 	@echo "$(GREEN)✓ All formulas reinstalled$(NC)"
 
@@ -141,11 +137,7 @@ upgrade: ## Upgrade formulas to latest versions
 	@for formula in $(FORMULAS); do \
 		if brew list $$formula >/dev/null 2>&1; then \
 			echo "Upgrading $$formula..."; \
-			if [ "$$formula" = "libepoxy-egl" ] || [ "$$formula" = "virglrenderer" ]; then \
-				brew upgrade --HEAD --build-from-source $(FORMULA_DIR)/$$formula.rb || true; \
-			else \
-				brew upgrade --build-from-source $(FORMULA_DIR)/$$formula.rb || true; \
-			fi; \
+			brew upgrade --build-from-source stuffbucket/qemu-spice/$$formula || true; \
 		else \
 			echo "$$formula not installed, skipping"; \
 		fi; \
@@ -286,4 +278,26 @@ log: ## Show recent Homebrew logs
 		ls -lt "$$(brew --cache)/Logs" | head -20; \
 	else \
 		echo "No logs found"; \
+	fi
+
+# GitHub Tap Management
+tap-add: ## Add the GitHub tap (for users installing from GitHub)
+	@echo "$(BLUE)=== Adding GitHub Tap ===$(NC)"
+	@brew tap stuffbucket/qemu-spice || true
+	@echo "$(GREEN)✓ Tap added: stuffbucket/qemu-spice$(NC)"
+	@echo "Now you can install with: brew install stuffbucket/qemu-spice/qemu-spice"
+
+tap-remove: ## Remove the GitHub tap
+	@echo "$(BLUE)=== Removing GitHub Tap ===$(NC)"
+	@brew untap stuffbucket/qemu-spice 2>/dev/null || true
+	@echo "$(GREEN)✓ Tap removed$(NC)"
+
+tap-status: ## Check tap status
+	@echo "$(BLUE)=== Tap Status ===$(NC)"
+	@brew tap | grep -q stuffbucket/qemu-spice && \
+		echo "$(GREEN)✓ Tap is installed$(NC)" || \
+		echo "$(YELLOW)⚠ Tap not installed. Run 'make tap-add' to add it$(NC)"
+	@if brew tap | grep -q stuffbucket/qemu-spice; then \
+		echo ""; \
+		echo "Tap location: $$(brew --repository)/Library/Taps/stuffbucket/homebrew-qemu-spice"; \
 	fi
