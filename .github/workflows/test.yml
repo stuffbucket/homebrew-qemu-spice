@@ -1,0 +1,58 @@
+name: Test Formulas
+
+on:
+  push:
+    paths:
+      - "Formula/**"
+      - ".github/workflows/test.yml"
+  pull_request:
+    paths:
+      - "Formula/**"
+      - ".github/workflows/test.yml"
+
+jobs:
+  audit:
+    name: Audit Formulas
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Homebrew
+        uses: Homebrew/actions/setup-homebrew@master
+
+      - name: Audit formulas
+        run: |
+          brew audit --strict --online Formula/*.rb
+
+      - name: Check Ruby style
+        run: |
+          brew style Formula/*.rb
+
+  quick-test:
+    name: Quick Syntax Test
+    runs-on: macos-14
+    needs: audit
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Test formula parsing
+        run: |
+          echo "=== Testing formula syntax ==="
+          for formula in Formula/*.rb; do
+            echo "Checking $formula..."
+            brew info --json=v2 "$formula" > /dev/null
+          done
+
+      - name: Check dependencies
+        run: |
+          echo "=== Checking formula dependencies ==="
+          brew deps --tree Formula/qemu-spice.rb
+
+      - name: Verify Makefile
+        run: |
+          echo "=== Checking build system ==="
+          test -f Makefile && echo "✓ Makefile present" || \
+            (echo "Error: Makefile not found" && exit 1)
+          make help

@@ -1,0 +1,90 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Thumbnails
+._*
+
+# Files that might appear in the root of a volume
+.DocumentRevisions-V100
+.fseventsd
+.Spotlight-V100
+.TemporaryItems
+.Trashes
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+
+# Directories potentially created on remote AFP share
+.AppleDB
+.AppleDesktop
+Network Trash Folder
+Temporary Items
+.apdisk
+
+# Homebrew
+*.bottle.tar.gz
+*.bottle.json
+*.bottle.json.sha256
+.brew_home/
+
+# Build artifacts
+*.o
+*.lo
+*.la
+*.so
+*.dylib
+*.dSYM/
+
+# Editor files
+*~
+*.swp
+*.swo
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# Test VMs and ISOs
+*.qcow2
+*.qcow
+*.iso
+*.img
+*.vmdk
+*.vdi
+QEMU_EFI.fd
+*.fd
+
+# Logs
+*.log
+/tmp/
+*.log.*
+
+# Git
+.git/
+
+# Build directories
+build/
+dist/
+*.egg-info/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Local configuration
+.env
+.env.local
+
+# Temporary files
+/tmp/
+*.tmp
+*.bak
+*.backup
+
+# Claude Code artifacts
+.claude/

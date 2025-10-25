@@ -1,0 +1,25 @@
+{
+	"folders": [
+		{
+			"path": "."
+		}
+	],
+	"settings": {
+		"files.exclude": {
+			"**/.git": true,
+			"**/.DS_Store": true
+		},
+		"editor.formatOnSave": true,
+		"editor.insertSpaces": false,
+		"editor.detectIndentation": true,
+		"files.associations": {
+			"*.rb": "ruby"
+		}
+	},
+	"extensions": {
+		"recommendations": [
+			"rebornix.ruby",
+			"redhat.vscode-yaml"
+		]
+	}
+}
