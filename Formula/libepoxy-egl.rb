@@ -78,15 +78,29 @@ index abcdefg..1234567 100644
  #define PLATFORM_HAS_WGL 0
  #elif defined(ANDROID)
 diff --git a/src/dispatch_common.c b/src/dispatch_common.c
+index 1234567..abcdefg 100644
+--- a/src/dispatch_common.c
++++ b/src/dispatch_common.c
+@@ -175,9 +175,10 @@
+ 
+ #if defined(__APPLE__)
+ #define GLX_LIB "/opt/X11/lib/libGL.1.dylib"
++#define EGL_LIB "libEGL.dylib"
+ #define OPENGL_LIB "/System/Library/Frameworks/OpenGL.framework/Versions/Current/OpenGL"
+-#define GLES1_LIB "libGLESv1_CM.so"
+-#define GLES2_LIB "libGLESv2.so"
++#define GLES1_LIB "libGLESv1_CM.dylib"
++#define GLES2_LIB "libGLESv2.dylib"
+ #elif defined(__ANDROID__)
+ #define GLX_LIB "libGLESv2.so"
+ #define EGL_LIB "libEGL.so"
+diff --git a/src/dispatch_common.c b/src/dispatch_common.c
 index abcdefg..1234567 100644
 --- a/src/dispatch_common.c
 +++ b/src/dispatch_common.c
-@@ -77,6 +77,8 @@
- #define GLX_LIB "libGL.so.1"
- #define OPENGL_LIB "libOpenGL.so.0"
- #define GLES1_LIB "libGLESv1_CM.so.1"
-+#elif defined(__APPLE__)
+@@ -176,6 +176,7 @@
+ #if defined(__APPLE__)
+ #define GLX_LIB "/opt/X11/lib/libGL.1.dylib"
 +#define EGL_LIB "libEGL.dylib"
- #else
- #define EGL_LIB "libEGL.so.1"
- #define GLX_LIB "libGL.so.1"
+ 
+ #elif PLATFORM_ANDROID
