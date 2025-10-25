@@ -93,13 +93,3 @@ index 1234567..abcdefg 100644
  #elif defined(__ANDROID__)
  #define GLX_LIB "libGLESv2.so"
  #define EGL_LIB "libEGL.so"
-diff --git a/src/dispatch_common.c b/src/dispatch_common.c
-index abcdefg..1234567 100644
---- a/src/dispatch_common.c
-+++ b/src/dispatch_common.c
-@@ -176,6 +176,7 @@
- #if defined(__APPLE__)
- #define GLX_LIB "/opt/X11/lib/libGL.1.dylib"
-+#define EGL_LIB "libEGL.dylib"
- 
- #elif PLATFORM_ANDROID
