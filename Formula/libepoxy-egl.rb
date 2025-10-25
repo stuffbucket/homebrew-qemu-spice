@@ -81,14 +81,13 @@ diff --git a/src/dispatch_common.c b/src/dispatch_common.c
 index 1234567..abcdefg 100644
 --- a/src/dispatch_common.c
 +++ b/src/dispatch_common.c
-@@ -175,9 +175,10 @@
- 
+@@ -176,8 +176,9 @@
  #if defined(__APPLE__)
  #define GLX_LIB "/opt/X11/lib/libGL.1.dylib"
-+#define EGL_LIB "libEGL.dylib"
  #define OPENGL_LIB "/System/Library/Frameworks/OpenGL.framework/Versions/Current/OpenGL"
 -#define GLES1_LIB "libGLESv1_CM.so"
 -#define GLES2_LIB "libGLESv2.so"
++#define EGL_LIB "libEGL.dylib"
 +#define GLES1_LIB "libGLESv1_CM.dylib"
 +#define GLES2_LIB "libGLESv2.dylib"
  #elif defined(__ANDROID__)
