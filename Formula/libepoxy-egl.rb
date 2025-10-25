@@ -77,3 +77,16 @@ index abcdefg..1234567 100644
  #define PLATFORM_HAS_GLX ENABLE_GLX
  #define PLATFORM_HAS_WGL 0
  #elif defined(ANDROID)
+diff --git a/src/dispatch_common.c b/src/dispatch_common.c
+index abcdefg..1234567 100644
+--- a/src/dispatch_common.c
++++ b/src/dispatch_common.c
+@@ -77,6 +77,8 @@
+ #define GLX_LIB "libGL.so.1"
+ #define OPENGL_LIB "libOpenGL.so.0"
+ #define GLES1_LIB "libGLESv1_CM.so.1"
++#elif defined(__APPLE__)
++#define EGL_LIB "libEGL.dylib"
+ #else
+ #define EGL_LIB "libEGL.so.1"
+ #define GLX_LIB "libGL.so.1"
