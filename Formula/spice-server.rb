@@ -21,7 +21,7 @@ class SpiceServer < Formula
   depends_on "openssl@3"
   depends_on "opus"
   depends_on "pixman"
-  depends_on "sasl"
+  depends_on "cyrus-sasl"
 
   on_macos do
     depends_on "gettext"
