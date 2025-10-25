@@ -10,6 +10,7 @@ class LibepoxyEgl < Formula
   depends_on "ninja" => :build
   depends_on "pkg-config" => :build
   depends_on "freeglut"
+  depends_on "mesa"
 
   conflicts_with "libepoxy", because: "this formula provides libepoxy with EGL support enabled"
 
