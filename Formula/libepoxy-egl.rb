@@ -51,15 +51,15 @@ end
 
 __END__
 diff --git a/meson.build b/meson.build
-index 85e9d93..b3c9bb6 100644
+index 1234567..abcdefg 100644
 --- a/meson.build
 +++ b/meson.build
-@@ -195,7 +195,7 @@ if build_glx
+@@ -44,7 +44,7 @@ endif
+ 
+ enable_egl = get_option('egl')
+ if enable_egl == 'auto'
+-  build_egl = not ['windows', 'darwin'].contains(host_system)
++  build_egl = not ['windows'].contains(host_system)
+ else
+   build_egl = enable_egl == 'yes'
  endif
-
- # On windows, the DLL has to have all of its functions resolved at link time.
--if host_system != 'windows' and host_system != 'darwin'
-+if host_system != 'windows'
-   egl_dep = dependency('egl', required: false)
-   build_egl = egl_dep.found()
-   if build_egl
