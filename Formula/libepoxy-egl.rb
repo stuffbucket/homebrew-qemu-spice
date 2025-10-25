@@ -21,7 +21,7 @@ class LibepoxyEgl < Formula
     # Optimize for Apple Silicon
     ENV.append "CFLAGS", "-O3 -march=armv8.5-a" if Hardware::CPU.arm?
 
-    system "meson", "setup", "build", "-Degl=yes", *std_meson_args
+    system "meson", "setup", "build", "-Degl=yes", "-Dtests=false", *std_meson_args
     system "meson", "compile", "-C", "build", "--verbose"
     system "meson", "install", "-C", "build"
   end
