@@ -17,6 +17,7 @@ class SpiceServer < Formula
   depends_on "meson" => :build
   depends_on "ninja" => :build
   depends_on "pkg-config" => :build
+  depends_on "python@3.13" => :build
   depends_on "spice-protocol" => :build
 
   depends_on "glib"
@@ -34,6 +35,9 @@ class SpiceServer < Formula
 
   def install
     ENV["LIBTOOL"] = "glibtool"
+
+    # Install required Python modules
+    system Formula["python@3.13"].opt_bin/"python3", "-m", "pip", "install", "--quiet", "pyparsing"
 
     # Extract spice-common submodule
     resource("spice-common").stage(buildpath/"subprojects/spice-common") unless build.head?
