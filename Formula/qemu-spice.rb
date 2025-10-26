@@ -193,29 +193,55 @@ class QemuSpice < Formula
       assert_match "hvf", shell_output("#{bin}/qemu-system-aarch64 -accel help")
     end
 
-    # Test that we can create a simple machine configuration
+    # Test that QEMU can actually start with a real configuration
     # Use native architecture for faster testing
     if Hardware::CPU.arm?
       # Test ARM64 on Apple Silicon (native, with HVF)
+      # Create a tiny test disk
+      system "#{bin}/qemu-img", "create", "-f", "qcow2", "#{testpath}/test.qcow2", "1M"
+      
+      # Start QEMU with -S (paused) and verify it runs
       (testpath/"qemu-test.sh").write <<~EOS
         #!/bin/bash
         #{bin}/qemu-system-aarch64 \\
           -M virt,accel=hvf \\
           -cpu host \\
           -m 128M \\
+          -drive file=#{testpath}/test.qcow2,if=virtio \\
           -nographic \\
-          -kernel /dev/null 2>&1 | grep -q "Could not open"
+          -S &
+        PID=$!
+        sleep 1
+        if kill -0 $PID 2>/dev/null; then
+          kill $PID
+          wait $PID 2>/dev/null
+          exit 0
+        else
+          exit 1
+        fi
       EOS
     else
       # Test x86_64 on Intel Macs (native)
+      system "#{bin}/qemu-img", "create", "-f", "qcow2", "#{testpath}/test.qcow2", "1M"
+      
       (testpath/"qemu-test.sh").write <<~EOS
         #!/bin/bash
         #{bin}/qemu-system-x86_64 \\
           -M q35 \\
           -cpu qemu64 \\
           -m 128M \\
+          -drive file=#{testpath}/test.qcow2,if=virtio \\
           -nographic \\
-          -kernel /dev/null 2>&1 | grep -q "Could not open"
+          -S &
+        PID=$!
+        sleep 1
+        if kill -0 $PID 2>/dev/null; then
+          kill $PID
+          wait $PID 2>/dev/null
+          exit 0
+        else
+          exit 1
+        fi
       EOS
     end
     chmod 0755, testpath/"qemu-test.sh"
