@@ -2,13 +2,23 @@ class SpiceServer < Formula
   desc "SPICE server library for virtual desktop infrastructure"
   homepage "https://www.spice-space.org/"
   url "https://gitlab.freedesktop.org/spice/spice/-/archive/v0.15.2/spice-v0.15.2.tar.bz2"
-  sha256 "8ff3ca0d6a4e9a8550b2e3b8b997b5db2fadbec871a62c6caa2c7f29d1b7e43b"
+  sha256 "5b0a4af620565fde831eed69fc485f2aa0a01283d05d254a4c0f388128c6a162"
   license "LGPL-2.1-or-later"
   head "https://gitlab.freedesktop.org/spice/spice.git", branch: "master"
 
   resource "spice-common" do
     url "https://gitlab.freedesktop.org/spice/spice-common/-/archive/58d375e5eadc6fb9e587e99fd81adcb95d01e8d6/spice-common-58d375e5eadc6fb9e587e99fd81adcb95d01e8d6.tar.gz"
     sha256 "c9a2cfaef9505fa5ce82add6d68461c8daa60b4eb567933c1dd9138db52b5e45"
+  end
+
+  resource "pyparsing" do
+    url "https://files.pythonhosted.org/packages/source/p/pyparsing/pyparsing-3.2.1.tar.gz"
+    sha256 "61980854fd66de3a90028d679a954d5f2a66dbf2e4e26159d4ab806f45fa8bb3"
+  end
+
+  resource "six" do
+    url "https://files.pythonhosted.org/packages/source/s/six/six-1.17.0.tar.gz"
+    sha256 "ff70335d468e7eb6ec65b95b99d3a2836546063f63acc5171de367e8a4b43f29"
   end
 
   depends_on "autoconf" => :build
@@ -40,8 +50,8 @@ class SpiceServer < Formula
     venv_dir = buildpath/"venv"
     system Formula["python@3.13"].opt_bin/"python3.13", "-m", "venv", venv_dir
     
-    # Install Python build dependencies in venv
-    system venv_dir/"bin/pip", "install", "--quiet", "pyparsing", "six"
+    # Install pyparsing (required by spice-common's spice_codegen.py)
+    system venv_dir/"bin/pip", "install", "--quiet", "pyparsing"
     
     # Use venv Python for the build
     ENV.prepend_path "PATH", venv_dir/"bin"
