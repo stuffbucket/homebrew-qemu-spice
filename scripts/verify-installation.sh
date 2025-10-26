@@ -69,45 +69,21 @@ echo "4. Checking SPICE Protocol..."
 echo "-----------------------------------"
 if qemu-system-aarch64 -spice help 2>&1 | grep -q "port="; then
     echo -e "${GREEN}✓${NC} SPICE protocol available"
-    # Check for key SPICE features
+    # Check for key SPICE features (help command returns error code, so disable exit-on-error temporarily)
+    set +e
     SPICE_HELP=$(qemu-system-aarch64 -spice help 2>&1)
-    echo "$SPICE_HELP" | grep -q "gl=" && echo -e "${GREEN}✓${NC} SPICE GL streaming supported"
-    echo "$SPICE_HELP" | grep -q "agent-mouse=" && echo -e "${GREEN}✓${NC} SPICE agent support"
-else
-    echo -e "${RED}✗${NC} SPICE protocol not available"
-    exit 1
-fi
-echo ""
-
-echo "4. Checking SPICE Protocol..."
-echo "-----------------------------------"
-if qemu-system-aarch64 -spice help 2>&1 | grep -q "port="; then
-    echo -e "${GREEN}✓${NC} SPICE protocol available"
-    # Check for key SPICE features
-    SPICE_HELP=$(qemu-system-aarch64 -spice help 2>&1)
-    echo "$SPICE_HELP" | grep -q "gl=" && echo -e "${GREEN}✓${NC} SPICE GL streaming supported"
-    echo "$SPICE_HELP" | grep -q "agent-mouse=" && echo -e "${GREEN}✓${NC} SPICE agent support"
-else
-    echo -e "${RED}✗${NC} SPICE protocol not available"
-    exit 1
-fi
-echo ""
-
-echo "5. Checking Accelerator Support..."
-echo "-----------------------------------"
-# HVF is only available for native architecture on Apple Silicon
-if [[ $(uname -m) == "arm64" ]]; then
-    check_feature "qemu-system-aarch64 -accel help" "hvf" "HVF (Hypervisor.framework) - native arm64" || echo -e "${YELLOW}⚠${NC} HVF not available"
-    # Verify x86_64 does NOT have HVF (expected)
-    if qemu-system-x86_64 -accel help 2>&1 | grep -q "^hvf$"; then
-        echo -e "${YELLOW}⚠${NC} Unexpected: HVF in x86_64 binary (should not happen)"
-    else
-        echo -e "${GREEN}✓${NC} x86_64 correctly uses TCG only (no HVF)"
+    set -e
+    if echo "$SPICE_HELP" | grep -q "agent-mouse="; then
+        echo -e "${GREEN}✓${NC} SPICE agent support"
     fi
+    if echo "$SPICE_HELP" | grep -q "streaming-video="; then
+        echo -e "${GREEN}✓${NC} SPICE video streaming"
+    fi
+    # Note: gl= is Linux-only (X11/Wayland), macOS uses VirGL + Cocoa for GPU acceleration
 else
-    echo -e "${YELLOW}⚠${NC} HVF only available on Apple Silicon (current: $(uname -m))"
+    echo -e "${RED}✗${NC} SPICE protocol not available"
+    exit 1
 fi
-check_feature "qemu-system-x86_64 -accel help" "tcg" "TCG (software emulation)" || exit 1
 echo ""
 
 echo "5. Checking Accelerator Support..."
@@ -138,24 +114,10 @@ echo ""
 
 echo "7. Checking Network Backend Support..."
 echo "-----------------------------------"
-NETDEV_HELP=$(qemu-system-aarch64 -netdev help 2>&1)
+NETDEV_HELP=$(qemu-system-aarch64 -machine virt -netdev help 2>&1)
 echo "$NETDEV_HELP" | grep -q "user" && echo -e "${GREEN}✓${NC} User mode networking (SLIRP)"
 echo "$NETDEV_HELP" | grep -q "tap" && echo -e "${GREEN}✓${NC} TAP networking"
 echo "$NETDEV_HELP" | grep -q "vmnet" && echo -e "${GREEN}✓${NC} vmnet networking (macOS)" || echo -e "${YELLOW}⚠${NC} vmnet not available (optional)"
-echo ""
-
-echo "8. Checking Storage Format Support..."
-echo "-----------------------------------"
-qemu-img --help | grep -q "qcow2" && echo -e "${GREEN}✓${NC} QCOW2 format supported" || exit 1
-qemu-img --help | grep -q "raw" && echo -e "${GREEN}✓${NC} RAW format supported" || exit 1
-# Test image creation
-TEST_IMG="/tmp/qemu-verify-test-$$.qcow2"
-if qemu-img create -f qcow2 "$TEST_IMG" 1M >/dev/null 2>&1; then
-    echo -e "${GREEN}✓${NC} Image creation works"
-    rm -f "$TEST_IMG"
-else
-    echo -e "${RED}✗${NC} Image creation failed"
-fi
 echo ""
 
 echo "8. Checking Storage Format Support..."
