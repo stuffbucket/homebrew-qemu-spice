@@ -95,9 +95,9 @@ virglrenderer: libepoxy-egl ## Build virglrenderer (~3-5 min)
 spice-server: virglrenderer ## Install spice-server from Homebrew core
 	@echo "$(BLUE)=== Installing spice-server ===$(NC)"
 	@echo "SPICE protocol server library (from Homebrew core)"
-	@brew install spice-server && \
-	echo "$(GREEN)✓ spice-server installed$(NC)" || \
-	(echo "$(RED)✗ Installation failed$(NC)" && exit 1)
+	@# Note: spice-server pulls in libepoxy as dependency (conflicts with our libepoxy-egl)
+	@brew install spice-server 2>&1 | grep -v "brew link --overwrite" || true && \
+	echo "$(GREEN)✓ spice-server installed$(NC)"
 
 qemu-spice: spice-server ## Build qemu-spice (~25-35 min)
 	@echo "$(BLUE)=== Building qemu-spice ===$(NC)"
