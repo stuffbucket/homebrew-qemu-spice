@@ -50,8 +50,10 @@ class SpiceServer < Formula
     venv_dir = buildpath/"venv"
     system Formula["python@3.13"].opt_bin/"python3.13", "-m", "venv", venv_dir
     
-    # Install pyparsing (required by spice-common's spice_codegen.py)
-    system venv_dir/"bin/pip", "install", "--quiet", "pyparsing"
+    # Install Python dependencies (required by spice-common)
+    # - pyparsing: used by spice_codegen.py parser
+    # - six: Python 2/3 compatibility library required by meson.build
+    system venv_dir/"bin/pip", "install", "--quiet", "pyparsing", "six"
     
     # Use venv Python for the build
     ENV.prepend_path "PATH", venv_dir/"bin"
