@@ -194,15 +194,30 @@ class QemuSpice < Formula
     end
 
     # Test that we can create a simple machine configuration
-    (testpath/"qemu-test.sh").write <<~EOS
-      #!/bin/bash
-      #{bin}/qemu-system-aarch64 \\
-        -M virt \\
-        -cpu cortex-a72 \\
-        -m 128M \\
-        -nographic \\
-        -kernel /dev/null 2>&1 | grep -q "Could not open"
-    EOS
+    # Use native architecture for faster testing
+    if Hardware::CPU.arm?
+      # Test ARM64 on Apple Silicon (native, with HVF)
+      (testpath/"qemu-test.sh").write <<~EOS
+        #!/bin/bash
+        #{bin}/qemu-system-aarch64 \\
+          -M virt,accel=hvf \\
+          -cpu host \\
+          -m 128M \\
+          -nographic \\
+          -kernel /dev/null 2>&1 | grep -q "Could not open"
+      EOS
+    else
+      # Test x86_64 on Intel Macs (native)
+      (testpath/"qemu-test.sh").write <<~EOS
+        #!/bin/bash
+        #{bin}/qemu-system-x86_64 \\
+          -M q35 \\
+          -cpu qemu64 \\
+          -m 128M \\
+          -nographic \\
+          -kernel /dev/null 2>&1 | grep -q "Could not open"
+      EOS
+    end
     chmod 0755, testpath/"qemu-test.sh"
     system testpath/"qemu-test.sh"
   end
