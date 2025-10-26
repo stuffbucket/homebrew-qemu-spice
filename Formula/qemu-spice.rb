@@ -33,6 +33,7 @@ class QemuSpice < Formula
   depends_on "nettle"
   depends_on "pixman"
   depends_on "snappy"
+  depends_on "usbredir"
   depends_on "vde"
   depends_on "zstd"
 
