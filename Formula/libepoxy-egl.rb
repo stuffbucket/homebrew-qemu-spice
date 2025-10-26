@@ -30,8 +30,7 @@ class LibepoxyEgl < Formula
     (testpath/"test.c").write <<~EOS
       #include <epoxy/gl.h>
       #ifdef __APPLE__
-        #include <OpenGL/CGLContext.h>
-        #include <OpenGL/CGLTypes.h>
+        #include <OpenGL/OpenGL.h>
       #endif
       int main() {
         #ifdef __APPLE__

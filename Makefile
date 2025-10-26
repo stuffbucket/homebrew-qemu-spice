@@ -162,7 +162,7 @@ test: ## Run brew test on installed formulas
 		(echo "$(RED)✗ qemu-img not found$(NC)" && exit 1)
 	@echo ""
 	@qemu-system-x86_64 --version | head -1
-	@qemu-system-x86_64 -device help | grep -q spice && \
+	@qemu-system-x86_64 -device help | grep -iq spice && \
 		echo "$(GREEN)✓ SPICE support enabled$(NC)" || \
 		(echo "$(RED)✗ SPICE support missing$(NC)" && exit 1)
 	@qemu-system-x86_64 -accel help | grep -q hvf && \
