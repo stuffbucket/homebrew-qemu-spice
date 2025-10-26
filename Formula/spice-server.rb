@@ -36,8 +36,15 @@ class SpiceServer < Formula
   def install
     ENV["LIBTOOL"] = "glibtool"
 
-    # Install required Python modules
-    system Formula["python@3.13"].opt_bin/"python3", "-m", "pip", "install", "--quiet", "pyparsing"
+    # Create isolated Python virtual environment for build dependencies
+    venv_dir = buildpath/"venv"
+    system Formula["python@3.13"].opt_bin/"python3.13", "-m", "venv", venv_dir
+    
+    # Install Python build dependencies in venv
+    system venv_dir/"bin/pip", "install", "--quiet", "pyparsing", "six"
+    
+    # Use venv Python for the build
+    ENV.prepend_path "PATH", venv_dir/"bin"
 
     # Extract spice-common submodule
     resource("spice-common").stage(buildpath/"subprojects/spice-common") unless build.head?
