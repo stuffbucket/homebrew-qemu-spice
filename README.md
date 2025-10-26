@@ -14,9 +14,7 @@ QEMU 10.1.2 with SPICE protocol support for Apple Silicon macOS.
 
 ## Installation
 
-### Using Homebrew Tap (Recommended)
-
-Now that the formulas are published on GitHub, this is the easiest way:
+### Using Homebrew Tap
 
 ```bash
 # Unlink existing QEMU if installed
@@ -33,8 +31,6 @@ brew install spice-server  # From Homebrew core
 # Install QEMU with SPICE
 brew install stuffbucket/qemu-spice/qemu-spice
 ```
-
-**Build time:** 30-45 minutes on Apple Silicon.
 
 ### For Development: Using Makefile
 
@@ -60,6 +56,7 @@ make qemu-spice
 
 # Run tests
 make test
+make verify
 
 # Check installation status
 make status
@@ -94,12 +91,17 @@ wget https://cdimage.ubuntu.com/releases/24.04/release/ubuntu-24.04-desktop-arm6
 qemu-system-aarch64 \
   -machine virt,accel=hvf,highmem=on \
   -cpu host -smp 8 -m 16G \
-  -device virtio-gpu-gl-pci \
-  -display cocoa,gl=on \
-  -audiodev coreaudio,id=audio0 \
-  -device intel-hda -device hda-duplex,audiodev=audio0 \
+  -bios /opt/homebrew/share/qemu/edk2-aarch64-code.fd \
+  -device virtio-gpu-pci \
+  -display cocoa,show-cursor=on \
+  -audio coreaudio \
+  -device intel-hda -device hda-duplex \
   -netdev user,id=net0,hostfwd=tcp::2222-:22 \
   -device virtio-net-pci,netdev=net0 \
+  -device virtio-rng-pci \
+  -device virtio-keyboard-pci \
+  -device virtio-mouse-pci \
+  -serial stdio \
   -drive file=ubuntu-arm64.qcow2,if=virtio \
   -cdrom ubuntu-24.04-desktop-arm64.iso
 ```
@@ -117,13 +119,17 @@ wget https://releases.ubuntu.com/24.04/ubuntu-24.04-desktop-amd64.iso
 qemu-system-x86_64 \
   -machine q35,accel=hvf \
   -cpu host -smp 8 -m 16G \
-  -device virtio-vga-gl \
-  -display cocoa,gl=on \
-  -spice port=5900,disable-ticketing=on,gl=on \
-  -audiodev coreaudio,id=audio0 \
-  -device intel-hda -device hda-duplex,audiodev=audio0 \
+  -device virtio-vga \
+  -display cocoa,show-cursor=on \
+  -spice port=5900,addr=127.0.0.1,disable-ticketing=on,streaming-video=filter \
+  -audio coreaudio \
+  -device intel-hda -device hda-duplex \
   -netdev user,id=net0,hostfwd=tcp::2222-:22 \
   -device virtio-net-pci,netdev=net0 \
+  -device virtio-rng-pci \
+  -device virtio-keyboard-pci \
+  -device virtio-mouse-pci \
+  -serial stdio \
   -drive file=ubuntu-x86_64.qcow2,if=virtio \
   -cdrom ubuntu-24.04-desktop-amd64.iso
 ```
@@ -208,6 +214,57 @@ Memory:
 - Light workload: 8GB
 - Development: 16GB
 - Heavy workload: 24-32GB
+
+## Demo
+
+Try the included **Debian multimedia demo** to see QEMU + SPICE in action:
+
+```bash
+./scripts/demo-debian.sh
+```
+
+This downloads a Debian 13 cloud image (~380MB) and boots it with:
+
+- HVF acceleration (native Apple Silicon)
+- VirGL GPU acceleration
+- Audio/video playback capabilities
+- Full multimedia package support
+
+**Alpine alternative:** For a minimal test, use `./scripts/demo-alpine.sh` (50MB ISO)
+
+## SPICE Remote Access
+
+QEMU is built with SPICE protocol support for remote access. To use it:
+
+### 1. Start QEMU with SPICE server
+
+```bash
+qemu-system-aarch64 \
+  -machine virt,accel=hvf -cpu host -smp 2 -m 2G \
+  -device qxl-vga \
+  -spice port=5900,addr=127.0.0.1,disable-ticketing=on \
+  -device virtio-serial-pci \
+  -device virtserialport,chardev=spicechannel0,name=com.redhat.spice.0 \
+  -chardev spicevmc,id=spicechannel0,name=vdagent \
+  -drive file=disk.qcow2,if=virtio \
+  -display none
+```
+
+### 2. Connect with a SPICE client
+
+**Linux/Windows:** Use `remote-viewer` or `virt-viewer`:
+
+```bash
+remote-viewer spice://localhost:5900
+```
+
+**macOS:** No native SPICE client available. Options:
+
+- Use `-display cocoa` for local display (recommended for macOS)
+- Use `-display spice-app` for built-in SPICE viewer (limited features)
+- Connect from a Linux/Windows client over the network
+
+**Note:** SPICE GL (`-spice gl=on`) requires Linux with X11/Wayland and is not available on macOS. GPU acceleration on macOS works through VirGL with Cocoa display instead.
 
 ## Troubleshooting
 
