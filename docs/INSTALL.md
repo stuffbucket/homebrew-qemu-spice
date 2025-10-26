@@ -26,7 +26,7 @@ brew tap stuffbucket/qemu-spice
 # 3. Install dependencies in order
 brew install --HEAD stuffbucket/qemu-spice/libepoxy-egl
 brew install --HEAD stuffbucket/qemu-spice/virglrenderer
-brew install stuffbucket/qemu-spice/spice-server
+brew install spice-server  # From Homebrew core
 
 # 4. Install QEMU with SPICE
 brew install stuffbucket/qemu-spice/qemu-spice
@@ -65,7 +65,7 @@ If you want to share this tap or install on multiple machines:
 brew tap yourusername/qemu-spice
 brew install --HEAD libepoxy-egl
 brew install --HEAD virglrenderer
-brew install spice-server
+brew install spice-server  # From Homebrew core
 brew install qemu-spice
 ```
 

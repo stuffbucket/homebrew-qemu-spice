@@ -28,7 +28,7 @@ brew tap stuffbucket/qemu-spice
 # Install dependencies
 brew install --HEAD stuffbucket/qemu-spice/libepoxy-egl
 brew install --HEAD stuffbucket/qemu-spice/virglrenderer
-brew install stuffbucket/qemu-spice/spice-server
+brew install spice-server  # From Homebrew core
 
 # Install QEMU with SPICE
 brew install stuffbucket/qemu-spice/qemu-spice
@@ -143,7 +143,7 @@ On Apple Silicon with HVF acceleration:
 QEMU 10.1.2 with SPICE support and Apple Silicon optimizations.
 
 ### spice-server
-SPICE server library 0.15.2 (last macOS-compatible version).
+SPICE server library 0.16.0 (installed from Homebrew core).
 
 ### virglrenderer
 Virtual GPU renderer using akihikodaki's macOS fork.

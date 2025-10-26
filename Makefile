@@ -92,15 +92,12 @@ virglrenderer: libepoxy-egl ## Build virglrenderer (~3-5 min)
 	echo "$(GREEN)✓ virglrenderer built in $${DURATION}s$(NC)" || \
 	(echo "$(RED)✗ Build failed. Check 'brew --cache' for logs$(NC)" && exit 1)
 
-spice-server: virglrenderer ## Build spice-server (~5-7 min)
-	@echo "$(BLUE)=== Building spice-server ===$(NC)"
-	@echo "SPICE protocol server library"
-	@START=$$(date +%s); \
-	brew install --build-from-source --verbose stuffbucket/qemu-spice/spice-server && \
-	END=$$(date +%s) && \
-	DURATION=$$((END - START)) && \
-	echo "$(GREEN)✓ spice-server built in $${DURATION}s$(NC)" || \
-	(echo "$(RED)✗ Build failed. Check 'brew --cache' for logs$(NC)" && exit 1)
+spice-server: virglrenderer ## Install spice-server from Homebrew core
+	@echo "$(BLUE)=== Installing spice-server ===$(NC)"
+	@echo "SPICE protocol server library (from Homebrew core)"
+	@brew install spice-server && \
+	echo "$(GREEN)✓ spice-server installed$(NC)" || \
+	(echo "$(RED)✗ Installation failed$(NC)" && exit 1)
 
 qemu-spice: spice-server ## Build qemu-spice (~25-35 min)
 	@echo "$(BLUE)=== Building qemu-spice ===$(NC)"
