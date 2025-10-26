@@ -165,7 +165,7 @@ test: ## Run brew test on installed formulas
 	@qemu-system-x86_64 -device help | grep -iq spice && \
 		echo "$(GREEN)✓ SPICE support enabled$(NC)" || \
 		(echo "$(RED)✗ SPICE support missing$(NC)" && exit 1)
-	@qemu-system-x86_64 -accel help | grep -q hvf && \
+	@qemu-system-aarch64 -accel help | grep -q hvf && \
 		echo "$(GREEN)✓ HVF acceleration available$(NC)" || \
 		(echo "$(RED)✗ HVF acceleration missing$(NC)" && exit 1)
 	@echo ""
