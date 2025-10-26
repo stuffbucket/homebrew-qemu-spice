@@ -6,6 +6,11 @@ class SpiceServer < Formula
   license "LGPL-2.1-or-later"
   head "https://gitlab.freedesktop.org/spice/spice.git", branch: "master"
 
+  resource "spice-common" do
+    url "https://gitlab.freedesktop.org/spice/spice-common/-/archive/58d375e5eadc6fb9e587e99fd81adcb95d01e8d6/spice-common-58d375e5eadc6fb9e587e99fd81adcb95d01e8d6.tar.gz"
+    sha256 "c9a2cfaef9505fa5ce82add6d68461c8daa60b4eb567933c1dd9138db52b5e45"
+  end
+
   depends_on "autoconf" => :build
   depends_on "automake" => :build
   depends_on "libtool" => :build
@@ -29,6 +34,9 @@ class SpiceServer < Formula
 
   def install
     ENV["LIBTOOL"] = "glibtool"
+
+    # Extract spice-common submodule
+    resource("spice-common").stage(buildpath/"subprojects/spice-common") unless build.head?
 
     # Optimize for Apple Silicon
     if Hardware::CPU.arm?
