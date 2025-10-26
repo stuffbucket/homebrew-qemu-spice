@@ -170,11 +170,7 @@ class QemuSpice < Formula
 
   test do
     # Test that QEMU binaries run
-    expected = if Hardware::CPU.arm?
-      "QEMU emulator version"
-    else
-      "QEMU emulator version"
-    end
+    expected = "QEMU emulator version"
 
     # Test aarch64 emulator
     assert_match expected, shell_output("#{bin}/qemu-system-aarch64 --version")
@@ -182,15 +178,19 @@ class QemuSpice < Formula
     # Test x86_64 emulator
     assert_match expected, shell_output("#{bin}/qemu-system-x86_64 --version")
 
-    # Verify SPICE support is compiled in
-    assert_match "spice", shell_output("#{bin}/qemu-system-x86_64 -device help")
+    # Verify SPICE support is compiled in (check for QXL device)
+    assert_match "qxl", shell_output("#{bin}/qemu-system-x86_64 -device help")
 
-    # Verify virtio-vga-gl support
+    # Verify virtio-vga-gl support (x86_64)
     assert_match "virtio-vga-gl", shell_output("#{bin}/qemu-system-x86_64 -device help")
 
-    # Verify HVF (Hypervisor.framework) support on macOS
-    if OS.mac?
-      assert_match "hvf", shell_output("#{bin}/qemu-system-x86_64 -accel help")
+    # Verify virtio-gpu-gl support (aarch64)
+    assert_match "virtio-gpu-gl", shell_output("#{bin}/qemu-system-aarch64 -device help")
+
+    # Verify HVF (Hypervisor.framework) support on Apple Silicon
+    # HVF is only available for native architecture emulation
+    if OS.mac? && Hardware::CPU.arm?
+      assert_match "hvf", shell_output("#{bin}/qemu-system-aarch64 -accel help")
     end
 
     # Test that we can create a simple machine configuration
