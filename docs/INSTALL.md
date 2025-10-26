@@ -107,7 +107,8 @@ Expected output:
 ```
 QEMU emulator version 10.1.2
 ...
-name "spice-vmc"
+name "qxl", bus PCI, desc "Spice QXL GPU (secondary)"
+name "qxl-vga", bus PCI, desc "Spice QXL GPU (primary, vga compatible)"
 name "virtio-vga-gl"
 ...
 Accelerators supported in QEMU binary:

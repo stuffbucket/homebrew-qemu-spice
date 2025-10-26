@@ -441,9 +441,8 @@ qemu-system-aarch64 -M virt,accel=hvf -cpu host -m 1G -nographic -kernel /dev/nu
 qemu-system-x86_64 -device help | grep -i spice
 
 # Expected output includes:
-# name "spice-vmc"
-# name "virtio-vga-gl"
-# name "virtserialport"
+# name "qxl", bus PCI, desc "Spice QXL GPU (secondary)"
+# name "qxl-vga", bus PCI, desc "Spice QXL GPU (primary, vga compatible)"
 ```
 
 ### Test Audio
