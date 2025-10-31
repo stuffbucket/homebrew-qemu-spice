@@ -2,6 +2,15 @@
 
 QEMU 10.1.2 with SPICE protocol support for Apple Silicon macOS.
 
+## Requirements
+
+- **macOS 12.0 (Monterey) or later**
+- **Apple Silicon (M1/M2/M3/M4)** - Optimized for ARM64 architecture
+- **Xcode Command Line Tools** - `xcode-select --install`
+- **Homebrew** - [Install Homebrew](https://brew.sh)
+
+> **Note:** While Intel Macs may work, this tap is specifically optimized for Apple Silicon with HVF (Hypervisor.framework) acceleration and ARM64 optimizations.
+
 ## Features
 
 - QEMU 10.1.2 with SPICE protocol support
@@ -17,20 +26,19 @@ QEMU 10.1.2 with SPICE protocol support for Apple Silicon macOS.
 ### Using Homebrew Tap
 
 ```bash
-# Unlink existing QEMU if installed
+# Unlink existing QEMU if installed (optional)
 brew unlink qemu 2>/dev/null || true
 
-# Add the tap
-brew tap stuffbucket/qemu-spice
-
-# Install dependencies
-brew install --HEAD stuffbucket/qemu-spice/libepoxy-egl
-brew install --HEAD stuffbucket/qemu-spice/virglrenderer
-brew install spice-server  # From Homebrew core
-
-# Install QEMU with SPICE
+# Install QEMU with SPICE (automatically adds tap and installs dependencies)
 brew install stuffbucket/qemu-spice/qemu-spice
+
+or
+
+brew tap stuffbucket/qemu-spice
+brew install qemu-spice
 ```
+
+The format is `user/tap/formula`. All dependencies (`libepoxy-egl`, `virglrenderer`, `spice-server`) are automatically installed by the formula.
 
 ### For Development: Using Makefile
 
@@ -146,15 +154,19 @@ On Apple Silicon with HVF acceleration:
 ## Components
 
 ### qemu-spice
+
 QEMU 10.1.2 with SPICE support and Apple Silicon optimizations.
 
 ### spice-server
+
 SPICE server library 0.16.0 (installed from Homebrew core).
 
 ### virglrenderer
+
 Virtual GPU renderer using akihikodaki's macOS fork.
 
 ### libepoxy-egl
+
 OpenGL function pointer library with EGL patches for macOS.
 
 ## Documentation
@@ -207,10 +219,12 @@ system_profiler SPUSBDataType
 Leave 25-30% of CPU cores and RAM for macOS.
 
 Example allocations:
+
 - 8-core system: Use 4-6 cores, leave 2-4 for macOS
 - 16-core system: Use 8-12 cores, leave 4-8 for macOS
 
 Memory:
+
 - Light workload: 8GB
 - Development: 16GB
 - Heavy workload: 24-32GB
@@ -286,6 +300,7 @@ sysctl kern.hv_support
 ### VM is slow
 
 Ensure HVF acceleration is enabled:
+
 ```bash
 qemu-system-x86_64 -accel help | grep hvf
 # Should show "hvf"
