@@ -3,7 +3,7 @@ class Virglrenderer < Formula
   homepage "https://gitlab.freedesktop.org/virgl/virglrenderer"
   # Using akihikodaki's macOS-compatible fork
   url "https://github.com/akihikodaki/virglrenderer.git",
-      branch: "macos",
+      branch:   "macos",
       revision: "0a26988c5c4f3009c5b68e83dc0e36fb50e8c4f5"
   version "1.0.1"
   license "MIT"

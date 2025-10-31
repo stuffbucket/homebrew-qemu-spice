@@ -14,16 +14,14 @@ class QemuSpice < Formula
 
   # SPICE dependencies
   depends_on "spice-protocol" => :build
-  depends_on "libepoxy-egl"
-  depends_on "spice-server"
-  depends_on "virglrenderer"
 
-  # Core QEMU dependencies
+  # Core QEMU dependencies (alphabetically ordered)
   depends_on "capstone"
   depends_on "dtc"
   depends_on "glib"
   depends_on "gnutls"
   depends_on "jpeg-turbo"
+  depends_on "libepoxy-egl"
   depends_on "libpng"
   depends_on "libslirp"
   depends_on "libssh"
@@ -33,8 +31,10 @@ class QemuSpice < Formula
   depends_on "nettle"
   depends_on "pixman"
   depends_on "snappy"
+  depends_on "spice-server"
   depends_on "usbredir"
   depends_on "vde"
+  depends_on "virglrenderer"
   depends_on "zstd"
 
   uses_from_macos "bison" => :build
@@ -168,86 +168,6 @@ class QemuSpice < Formula
     (var/"qemu").mkpath
   end
 
-  test do
-    # Test that QEMU binaries run
-    expected = "QEMU emulator version"
-
-    # Test aarch64 emulator
-    assert_match expected, shell_output("#{bin}/qemu-system-aarch64 --version")
-
-    # Test x86_64 emulator
-    assert_match expected, shell_output("#{bin}/qemu-system-x86_64 --version")
-
-    # Verify SPICE support is compiled in (check for QXL device)
-    assert_match "qxl", shell_output("#{bin}/qemu-system-x86_64 -device help")
-
-    # Verify virtio-vga-gl support (x86_64)
-    assert_match "virtio-vga-gl", shell_output("#{bin}/qemu-system-x86_64 -device help")
-
-    # Verify virtio-gpu-gl support (aarch64)
-    assert_match "virtio-gpu-gl", shell_output("#{bin}/qemu-system-aarch64 -device help")
-
-    # Verify HVF (Hypervisor.framework) support on Apple Silicon
-    # HVF is only available for native architecture emulation
-    if OS.mac? && Hardware::CPU.arm?
-      assert_match "hvf", shell_output("#{bin}/qemu-system-aarch64 -accel help")
-    end
-
-    # Test that QEMU can actually start with a real configuration
-    # Use native architecture for faster testing
-    if Hardware::CPU.arm?
-      # Test ARM64 on Apple Silicon (native, with HVF)
-      # Create a tiny test disk
-      system "#{bin}/qemu-img", "create", "-f", "qcow2", "#{testpath}/test.qcow2", "1M"
-      
-      # Start QEMU with -S (paused) and verify it runs
-      (testpath/"qemu-test.sh").write <<~EOS
-        #!/bin/bash
-        #{bin}/qemu-system-aarch64 \\
-          -M virt,accel=hvf \\
-          -cpu host \\
-          -m 128M \\
-          -drive file=#{testpath}/test.qcow2,if=virtio \\
-          -nographic \\
-          -S &
-        PID=$!
-        sleep 1
-        if kill -0 $PID 2>/dev/null; then
-          kill $PID
-          wait $PID 2>/dev/null
-          exit 0
-        else
-          exit 1
-        fi
-      EOS
-    else
-      # Test x86_64 on Intel Macs (native)
-      system "#{bin}/qemu-img", "create", "-f", "qcow2", "#{testpath}/test.qcow2", "1M"
-      
-      (testpath/"qemu-test.sh").write <<~EOS
-        #!/bin/bash
-        #{bin}/qemu-system-x86_64 \\
-          -M q35 \\
-          -cpu qemu64 \\
-          -m 128M \\
-          -drive file=#{testpath}/test.qcow2,if=virtio \\
-          -nographic \\
-          -S &
-        PID=$!
-        sleep 1
-        if kill -0 $PID 2>/dev/null; then
-          kill $PID
-          wait $PID 2>/dev/null
-          exit 0
-        else
-          exit 1
-        fi
-      EOS
-    end
-    chmod 0755, testpath/"qemu-test.sh"
-    system testpath/"qemu-test.sh"
-  end
-
   def caveats
     <<~EOS
       QEMU with SPICE support has been installed with Apple Silicon optimizations.
@@ -284,5 +204,81 @@ class QemuSpice < Formula
       Documentation: https://www.qemu.org/docs/master/
       SPICE docs: https://www.spice-space.org/documentation.html
     EOS
+  end
+
+  test do
+    # Test that QEMU binaries run
+    expected = "QEMU emulator version"
+
+    # Test aarch64 emulator
+    assert_match expected, shell_output("#{bin}/qemu-system-aarch64 --version")
+
+    # Test x86_64 emulator
+    assert_match expected, shell_output("#{bin}/qemu-system-x86_64 --version")
+
+    # Verify SPICE support is compiled in (check for QXL device)
+    assert_match "qxl", shell_output("#{bin}/qemu-system-x86_64 -device help")
+
+    # Verify virtio-vga-gl support (x86_64)
+    assert_match "virtio-vga-gl", shell_output("#{bin}/qemu-system-x86_64 -device help")
+
+    # Verify virtio-gpu-gl support (aarch64)
+    assert_match "virtio-gpu-gl", shell_output("#{bin}/qemu-system-aarch64 -device help")
+
+    # Verify HVF (Hypervisor.framework) support on Apple Silicon
+    # HVF is only available for native architecture emulation
+    assert_match "hvf", shell_output("#{bin}/qemu-system-aarch64 -accel help") if OS.mac? && Hardware::CPU.arm?
+
+    # Test that QEMU can actually start with a real configuration
+    # Use native architecture for faster testing
+    # Create a tiny test disk
+    system "#{bin}/qemu-img", "create", "-f", "qcow2", "#{testpath}/test.qcow2", "1M"
+
+    if Hardware::CPU.arm?
+      # Test ARM64 on Apple Silicon (native, with HVF)
+      # Start QEMU with -S (paused) and verify it runs
+      (testpath/"qemu-test.sh").write <<~EOS
+        #!/bin/bash
+        #{bin}/qemu-system-aarch64 \\
+          -M virt,accel=hvf \\
+          -cpu host \\
+          -m 128M \\
+          -drive file=#{testpath}/test.qcow2,if=virtio \\
+          -nographic \\
+          -S &
+        PID=$!
+        sleep 1
+        if kill -0 $PID 2>/dev/null; then
+          kill $PID
+          wait $PID 2>/dev/null
+          exit 0
+        else
+          exit 1
+        fi
+      EOS
+    else
+      # Test x86_64 on Intel Macs (native)
+      (testpath/"qemu-test.sh").write <<~EOS
+        #!/bin/bash
+        #{bin}/qemu-system-x86_64 \\
+          -M q35 \\
+          -cpu qemu64 \\
+          -m 128M \\
+          -drive file=#{testpath}/test.qcow2,if=virtio \\
+          -nographic \\
+          -S &
+        PID=$!
+        sleep 1
+        if kill -0 $PID 2>/dev/null; then
+          kill $PID
+          wait $PID 2>/dev/null
+          exit 0
+        else
+          exit 1
+        fi
+      EOS
+    end
+    chmod 0755, testpath/"qemu-test.sh"
+    system testpath/"qemu-test.sh"
   end
 end

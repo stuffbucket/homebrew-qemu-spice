@@ -21,15 +21,15 @@ jobs:
       - name: Set up Homebrew
         uses: Homebrew/actions/setup-homebrew@master
 
-      - name: Audit formulas (non-fatal for tap formulas)
-        run: |
-          # Tap formulas have more flexibility than core
-          # Allow audit to report issues without failing CI
-          brew audit Formula/*.rb || echo "Audit completed with warnings (expected for tap formulas)"
-
       - name: Check Ruby style
         run: |
           brew style Formula/*.rb
+
+      - name: Audit formulas (informational only)
+        continue-on-error: true
+        run: |
+          echo "Running audit (warnings expected for tap formulas)..."
+          brew audit Formula/*.rb
 
   quick-test:
     name: Quick Syntax Test

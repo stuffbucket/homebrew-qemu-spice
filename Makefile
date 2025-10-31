@@ -13,6 +13,7 @@ NC := \033[0m
 
 # Formulas
 FORMULAS := libepoxy-egl virglrenderer spice-server qemu-spice
+TAP_FORMULAS := libepoxy-egl virglrenderer qemu-spice
 FORMULA_DIR := ./Formula
 
 help: ## Show this help message
@@ -26,13 +27,18 @@ help: ## Show this help message
 	@echo "$(YELLOW)Tap location:$(NC) $$(pwd)"
 
 audit: ## Run brew audit and style checks (fast)
-	@echo "$(BLUE)=== Running Formula Audit ===$(NC)"
-	@brew audit --strict --online $(FORMULA_DIR)/*.rb
-	@echo "$(GREEN)✓ Audit passed$(NC)"
-	@echo ""
 	@echo "$(BLUE)=== Running Style Check ===$(NC)"
 	@brew style $(FORMULA_DIR)/*.rb
 	@echo "$(GREEN)✓ Style check passed$(NC)"
+	@echo ""
+	@echo "$(BLUE)=== Running Formula Syntax Check ===$(NC)"
+	@for formula in $(FORMULA_DIR)/*.rb; do \
+		echo "Checking $$formula..."; \
+		brew ruby -e "require '$$formula'" || exit 1; \
+	done
+	@echo "$(GREEN)✓ Syntax check passed$(NC)"
+	@echo ""
+	@echo "$(YELLOW)Note: Full brew audit requires formulas to be installed in tap$(NC)"
 
 check-deps: ## Check and install build dependencies using brew
 	@echo "$(BLUE)=== Checking Build Dependencies ===$(NC)"
@@ -298,3 +304,44 @@ tap-status: ## Check tap status
 		echo ""; \
 		echo "Tap location: $$(brew --repository)/Library/Taps/stuffbucket/homebrew-qemu-spice"; \
 	fi
+
+# Testing and CI
+test-local: audit ## Quick local test (style + syntax only)
+	@echo "$(GREEN)✓ Local tests passed$(NC)"
+	@echo ""
+	@echo "$(YELLOW)For full testing:$(NC)"
+	@echo "  1. Push to GitHub and check CI (validates syntax/style on Linux)"
+	@echo "  2. Test build locally: brew install --build-from-source ./Formula/<name>.rb"
+
+ci-test: ## Simulate CI style checks (syntax only - formulas are macOS-specific)
+	@echo "$(BLUE)=== Simulating CI Style Checks ===$(NC)"
+	@echo "$(YELLOW)Note: Docker can only test syntax/style, not actual builds$(NC)"
+	@echo "$(YELLOW)      (formulas require macOS for building)$(NC)"
+	@echo ""
+	@if command -v docker >/dev/null 2>&1; then \
+		echo "Running style checks in Linux container..."; \
+		docker run --rm -v "$$PWD:/workspace" -w /workspace homebrew/brew:latest bash -c "\
+			brew style Formula/*.rb && \
+			echo '✓ Style check passed'"; \
+		echo "$(GREEN)✓ CI style simulation passed$(NC)"; \
+		echo "$(YELLOW)⚠ To test actual building, use your Mac$(NC)"; \
+	else \
+		echo "$(RED)✗ Docker not installed$(NC)"; \
+		echo "Install Docker to simulate CI style checks locally"; \
+		exit 1; \
+	fi
+
+test-build: ## Test building a formula locally (use: make test-build FORMULA=libepoxy-egl)
+	@if [ -z "$(FORMULA)" ]; then \
+		echo "$(RED)Error: Specify FORMULA=<name>$(NC)"; \
+		echo "Example: make test-build FORMULA=libepoxy-egl"; \
+		exit 1; \
+	fi
+	@echo "$(BLUE)=== Testing Build: $(FORMULA) ===$(NC)"
+	@if [ ! -f "Formula/$(FORMULA).rb" ]; then \
+		echo "$(RED)Error: Formula/$(FORMULA).rb not found$(NC)"; \
+		exit 1; \
+	fi
+	@echo "$(YELLOW)This will build from source (may take time)...$(NC)"
+	@brew install --build-from-source --verbose ./Formula/$(FORMULA).rb
+	@echo "$(GREEN)✓ Build test passed for $(FORMULA)$(NC)"

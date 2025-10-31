@@ -1,5 +1,5 @@
 class LibepoxyEgl < Formula
-  desc "Library for handling OpenGL function pointer management (with EGL support for macOS)"
+  desc "OpenGL function pointer library with EGL support for macOS"
   homepage "https://github.com/anholt/libepoxy"
   url "https://github.com/anholt/libepoxy/archive/refs/tags/1.5.10.tar.gz"
   sha256 "a7ced37f4102b745ac86d6a70a9da399cc139ff168ba6b8002b4d8d43c900c15"
