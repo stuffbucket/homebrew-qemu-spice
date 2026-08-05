@@ -1,571 +1,180 @@
-# Known Issues and Workarounds
+# Known issues and limitations
 
-This document covers known issues, limitations, and workarounds for QEMU with SPICE support on Apple Silicon macOS.
+## There is no GPU acceleration on macOS
 
-## Table of Contents
+This is the big one, and it is not fixable at the tap level.
 
-- [Critical Issues](#critical-issues)
-- [Formula-Specific Issues](#formula-specific-issues)
-- [QEMU Issues](#qemu-issues)
-- [SPICE Issues](#spice-issues)
-- [Platform Limitations](#platform-limitations)
-- [Workarounds](#workarounds)
+QEMU only compiles its SPICE OpenGL support when both `CONFIG_OPENGL` and
+`CONFIG_GBM` are set. From `include/ui/spice-display.h`:
 
----
-
-## Critical Issues
-
-###  1. libepoxy-egl Patch Dependency
-
-**Issue**: Our `libepoxy-egl` formula uses external patches that may break if upstream changes.
-
-**Affected Files**:
-- `Formula/libepoxy-egl.rb:17-18` - External patch from GitHub PR#239
-
-**Patch URL**:
-```ruby
-url "https://github.com/anholt/libepoxy/pull/239.patch"
-sha256 "e88d7fc5c384f93a5c4659c5fc1ac9e5e3d5bb964d5d54bdb97e4e46c1c9b1d4"
+```c
+#if defined(CONFIG_OPENGL) && defined(CONFIG_GBM)
+#  define HAVE_SPICE_GL 1
+#  include "ui/egl-helpers.h"
+#  include "ui/egl-context.h"
+#endif
 ```
 
-**Risk**:
-- Medium - If the PR is merged or deleted, the URL may become invalid
-- EGL support on macOS is not officially supported by libepoxy
+GBM (Generic Buffer Management) is part of Mesa and depends on Linux DRM. There
+is no macOS implementation, so `HAVE_SPICE_GL` is never defined in a macOS
+build. The `gl` and `rendernode` options are compiled out of `-spice` entirely
+(`ui/spice-core.c` wraps them in `#ifdef HAVE_SPICE_GL`).
 
-**Workaround**:
-- We maintain an inline patch (`:DATA`) as a backup
-- Consider hosting the patch in this repository if the external URL breaks
+QEMU's own `meson.build` shows the same requirement for the related vhost-user
+GPU path:
 
-**Long-term Solution**:
-```bash
-# If external patch fails, copy it locally:
-# 1. Download the patch: curl -o patches/libepoxy-egl-239.patch https://...
-# 2. Update formula to use local patch:
-patch do
-  url "file://#{buildpath}/../patches/libepoxy-egl-239.patch"
-end
+```meson
+have_vhost_user_gpu = have_vhost_user_gpu and virgl.found() and opengl.found() and gbm.found()
 ```
 
-###  2. virglrenderer macOS Fork Dependency
+What this looks like in practice, on a build configured with
+`--enable-opengl --enable-virglrenderer` against a working virglrenderer:
 
-**Issue**: Using akihikodaki's macOS fork instead of official virglrenderer.
+| Attempt | Result |
+|---|---|
+| `-spice gl=on` | `Invalid parameter 'gl'` |
+| `-display cocoa,gl=on` | `OpenGL is not supported by display backend 'cocoa'` |
+| `-device virtio-gpu-gl` | `The display backend does not have OpenGL support enabled` |
+| `-display egl-headless` | `egl: not available on this platform` |
 
-**Affected Files**:
-- `Formula/virglrenderer.rb:7-10` - GitHub fork with macOS branch
+`ui/cocoa.m` has no GL context handling at all — no `dpy_gl` hooks, no
+`DisplayGLMode` support. The `gl` suboption parses on `-display cocoa` only
+because `gl` is declared on the shared `DisplayOptions` base in `qapi/ui.json`;
+`system/vl.c` then rejects it at runtime:
 
-**Current**:
-```ruby
-url "https://github.com/akihikodaki/virglrenderer.git",
-    branch: "macos",
-    revision: "0a26988c5c4f3009c5b68e83dc0e36fb50e8c4f5"
+```c
+if (dpy.has_gl && dpy.gl != DISPLAY_GL_MODE_OFF && display_opengl == 0) {
+    error_report("OpenGL is not supported by display backend '%s'", ...);
 ```
 
-**Risk**:
-- Medium - Fork may not receive upstream updates
-- Specific commit pinning prevents automatic updates
+### Why the virglrenderer and libepoxy-egl formulas were removed
 
-**Status**:
-- This is intentional - official virglrenderer doesn't support macOS
-- Fork is actively maintained for UTM project
+Version 1.x of this tap built two extra formulas to try to enable the above:
 
-**Monitoring**:
-```bash
-# Check for updates periodically:
-git ls-remote https://github.com/akihikodaki/virglrenderer.git macos
+- `libepoxy-egl` — libepoxy 1.5.10 with a three-hunk patch enabling EGL on
+  Darwin
+- `virglrenderer` — akihikodaki's `macos` branch fork
+
+Neither could have any effect, for the reason above: without GBM, QEMU never
+compiles the code that would call into them. They also had problems of their
+own:
+
+- The `virglrenderer` formula pinned revision `0a26988c5c4f3009c5b68e83dc0e36fb50e8c4f5`,
+  which is not present in `akihikodaki/virglrenderer`. Fetching it fails with
+  `upload-pack: not our ref`, so a clean install of the tap could not complete.
+  That fork's `macos` branch has had no commits since 2023-12-10.
+- `libepoxy-egl` conflicted with homebrew-core's `libepoxy`, which several other
+  formulas depend on.
+- Two of its three patch hunks are now upstream anyway
+  ([anholt/libepoxy#239](https://github.com/anholt/libepoxy/pull/239) and
+  [#314](https://github.com/anholt/libepoxy/pull/314), merged March 2026),
+  and the third was already dead code because the formula passed `-Degl=yes`,
+  which bypasses the `auto` detection branch the patch modified.
+
+**If you need a GPU-accelerated VM on Apple Silicon**, use
+[UTM](https://mac.getutm.app/) with the Apple Virtualization backend, or
+Virtualization.framework directly. QEMU on macOS is the wrong tool for that job.
+
+## HVF only accelerates same-architecture guests
+
+Hypervisor.framework virtualises the CPU you already have. It cannot accelerate
+a foreign architecture.
+
+On Apple Silicon:
+
+```console
+$ qemu-system-x86_64 -M q35 -accel hvf -m 128M
+qemu-system-x86_64: -accel hvf: invalid accelerator hvf
 ```
 
-###  3. Conflicts with Standard Homebrew Packages
-
-**Issue**: Our custom packages conflict with standard Homebrew versions.
-
-**Conflicts**:
-- `libepoxy-egl` conflicts with `libepoxy`
-- `qemu-spice` may conflict with `qemu`
-
-**Impact**:
-- Users with existing `qemu` or `libepoxy` installations must unlink them
-- Can't have both versions installed simultaneously
-
-**Documented In**: INSTALL.md
-
-**Workaround**:
-```bash
-# Before installing:
-brew unlink qemu libepoxy 2>/dev/null || true
-
-# To revert:
-brew uninstall qemu-spice libepoxy-egl
-brew install qemu libepoxy
+```console
+$ qemu-system-aarch64 -M virt -accel hvf -cpu host -m 128M    # works
 ```
 
----
-
-## Formula-Specific Issues
-
-###  1. Build Time Dependencies
-
-**Issue**: Building from source takes 30-45 minutes on Apple Silicon.
-
-**Why**:
-- QEMU is a large codebase (~700MB source)
-- Compiling for 6 target architectures
-- No bottles (pre-compiled binaries) available
-
-**Impact**: Long initial installation time
-
-**Workaround**:
-- None - this is expected for source builds
-- Consider creating bottles for faster installation:
-  ```bash
-  brew install --build-bottle ./Formula/qemu-spice.rb
-  brew bottle qemu-spice
-  ```
-
-###  2. HEAD-only Builds Required
-
-**Issue**: `libepoxy-egl` and `virglrenderer` require `--HEAD` flag.
-
-**Why**:
-- Building from Git repositories instead of release tarballs
-- macOS support not in official releases
-
-**Commands**:
-```bash
-brew install --HEAD ./Formula/libepoxy-egl.rb
-brew install --HEAD ./Formula/virglrenderer.rb
-```
-
-**Impact**:
-- Updates require `brew reinstall --HEAD`
-- No version pinning available
-
-**Workaround**: Pin to specific Git revisions (already done in virglrenderer formula)
-
----
-
-## QEMU Issues
-
-### - 1. QEMU Audio Issues (RESOLVED)
-
-**Status**: - **RESOLVED** in QEMU 10.1.2
-
-**Previous Issue**: QEMU 9.1.1 had an audio regression causing crackling/stuttering.
-
-**Current Status**: We now use QEMU 10.1.2 (latest stable as of October 2025) which includes all audio fixes.
-
-**If you still experience audio issues**:
-```bash
-# Try increasing buffer size:
--audiodev coreaudio,id=audio0,out.buffer-length=10000
-
-# Or use AC97 instead of Intel HDA:
--device ac97,audiodev=audio0
-```
-
-###  2. HVF Acceleration Architecture Limitation
-
-**Issue**: HVF only accelerates guests matching host architecture.
-
-**Platform**: macOS Hypervisor.framework limitation
-
-**Impact**:
-- - ARM64 guests on ARM64 host: ~95% native performance (accelerated)
--  x86_64 guests on ARM64 host: ~20-80% performance (emulated with some optimization)
--  x86_64 guests cannot use full HVF acceleration on Apple Silicon
-
-**Clarification**:
-- QEMU 9.x DOES support HVF for x86_64 guests on ARM64 hosts
-- Performance is still good (~80% for many workloads) but not native
-
-**Recommendation**: Use ARM64 guests when possible for best performance.
-
-###  3. Guest Agent Not Built
-
-**Issue**: Our formula disables QEMU guest agent (`--disable-guest-agent`).
-
-**Why**:
-- Simplifies build
-- Guest agents are installed inside VMs, not on host
-- Follows standard Homebrew qemu formula
-
-**Impact**: No host-side guest agent binary (not needed for typical use)
-
-**Workaround**: Install guest agent inside VMs (see GUEST-TOOLS.md)
-```bash
-# Inside Linux guest:
-sudo apt install qemu-guest-agent
-```
-
----
-
-## SPICE Issues
-
-###  1. SPICE Remote Viewer Connection Issues
-
-**Issue**: `remote-viewer` may fail to connect with "Unable to connect to graphic server" error.
-
-**Source**: Multiple user reports (2024-2025)
-
-**Symptoms**:
-```
-ERROR: Unable to connect to the graphic server
-runtime check failure in virt-viewer
-```
-
-**Causes**:
-- SPICE port not accessible
-- Firewall blocking connection
-- SPICE agent not running in guest
-
-**Workarounds**:
-
-**a) Check SPICE is listening:**
-```bash
-# On host, verify QEMU is listening:
-lsof -i :5900
-netstat -an | grep 5900
-```
-
-**b) Use correct remote-viewer path:**
-```bash
-# Apple Silicon:
-/opt/homebrew/bin/remote-viewer spice://localhost:5900
-
-# Intel:
-/usr/local/bin/remote-viewer spice://localhost:5900
-```
-
-**c) Rebuild spice-gtk from source:**
-```bash
-brew reinstall --build-from-source spice-gtk
-```
-
-**d) Try alternative connection:**
-```bash
-# If localhost doesn't work, try 127.0.0.1:
-remote-viewer spice://127.0.0.1:5900
-```
-
-###  2. SPICE Guest Agent Clipboard Issues
-
-**Issue**: Clipboard sharing not working between host and guest.
-
-**Cause**: Guest agent not installed or not running
-
-**Solution**: See GUEST-TOOLS.md
-
-**Verify in guest:**
-```bash
-# Linux:
-systemctl status spice-vdagent
-
-# Check virtio-serial device exists:
-ls -la /dev/virtio-ports/
-# Should see: com.redhat.spice.0
-
-# Restart if needed:
-sudo systemctl restart spice-vdagent
-```
-
-**Windows**:
-- Install SPICE guest tools from https://www.spice-space.org/download.html
-- Check "SPICE Agent" service is running
-
-###  3. SPICE Default Enablement in virt-manager
-
-**Issue**: virt-manager assumes SPICE support and enables it by default (macOS doesn't support this out of the box).
-
-**Impact**: New VMs fail to start with SPICE errors
-
-**Workaround**: Remove SPICE settings when using virt-manager on macOS, use Cocoa display instead:
-```xml
-<!-- In VM XML, use: -->
-<graphics type='cocoa'/>
-<!-- Instead of: -->
-<graphics type='spice'/>
-```
-
----
-
-## Platform Limitations
-
-###  1. macOS OpenGL Deprecation
-
-**Issue**: Apple deprecated OpenGL on macOS in favor of Metal.
-
-**Impact**:
-- OpenGL still works but won't receive updates
-- May have bugs that won't be fixed
-- virglrenderer relies on OpenGL
-
-**Current Status**: Still functional on macOS 15 (Sequoia)
-
-**Future Risk**: Apple may remove OpenGL entirely in future macOS versions
-
-**Long-term**:
-- Metal backend for virglrenderer (in development)
-- ANGLE (OpenGL ES → Metal) as workaround (our approach with libepoxy)
-
-###  2. EGL Not Officially Supported on macOS
-
-**Issue**: EGL (OpenGL rendering to offscreen surfaces) is not natively supported on macOS.
-
-**Our Approach**: Patch libepoxy to enable EGL via ANGLE
-
-**Risk**:
-- Patches may break with macOS updates
-- Performance may be suboptimal compared to native implementations
-
-**Status**: Currently working, but monitor for macOS updates
-
-###  3. No Native SPICE on macOS
-
-**Issue**: SPICE protocol was designed for Linux/Windows, not macOS.
-
-**Why We Build It Anyway**:
-- Works for VMs running on macOS (host support)
-- Enables remote access to Linux/Windows VMs
-- Better than VNC for features like clipboard, USB redirect
-
-**Limitation**: Can't use SPICE to connect TO a macOS guest (use Screen Sharing instead)
-
----
-
-## Workarounds
-
-### USB Passthrough Permissions
-
-**Issue**: USB passthrough may fail with permission errors.
-
-**Solution**:
-```bash
-# Find USB device:
-system_profiler SPUSBDataType
-
-# QEMU needs permission to access USB
-# Temporary (until reboot):
-sudo chmod 666 /dev/bus/usb/*/***
-
-# Or run QEMU with sudo (not recommended for production):
-sudo qemu-system-x86_64 -device usb-host,vendorid=0x1234,productid=0x5678 ...
-```
-
-**Better Solution**: Create udev rules (on Linux) or use dedicated user permissions
-
-### Display Issues with Cocoa
-
-**Issue**: Cocoa display may have scaling issues on Retina displays.
-
-**Workaround**:
-```bash
-# Try different scaling:
--display cocoa,gl=on,show-cursor=on
-
-# Or disable OpenGL:
--display cocoa,gl=off
-```
-
-### Network Not Working in Guest
-
-**Issue**: User-mode networking doesn't work.
-
-**Causes**:
-- Missing virtio-net driver in guest
-- Firewall blocking
-
-**Solutions**:
-```bash
-# a) Verify virtio-net device is present:
--device virtio-net-pci,netdev=net0
-
-# b) Install virtio drivers in guest (Windows):
-# Load NetKVM driver from virtio-win.iso
-
-# c) Use different NIC model:
--device e1000,netdev=net0  # More compatible, slower
-
-# d) Add DNS forwarding:
--netdev user,id=net0,dns=8.8.8.8
-```
-
-### High CPU Usage
-
-**Issue**: QEMU using 100%+ CPU even when guest is idle.
-
-**Causes**:
-- No HVF acceleration
-- Incorrect CPU topology
-- Missing idle support
-
-**Solutions**:
-```bash
-# a) Verify HVF is enabled:
-qemu-system-x86_64 -accel help | grep hvf
-# Add: -accel hvf
-
-# b) Don't oversubscribe CPUs:
-# Check your CPU count first: sysctl hw.ncpu
-# Leave 25-30% for macOS:
--smp cpus=8,cores=8,threads=1  # Adjust to your system
-
-# c) Enable CPU idle:
--cpu host,+idle
-```
-
----
-
-## Testing for Issues
-
-### Verify Installation
-
-Run the provided verification script:
-```bash
-./scripts/verify-installation.sh
-```
-
-### Test HVF Acceleration
+x86_64 guests on Apple Silicon fall back to TCG (`-accel tcg`) and run at
+emulation speed, which is roughly an order of magnitude slower than native. If
+you need x86_64 performance on Apple Silicon, QEMU is not going to provide it.
+
+Earlier versions of this tap shipped a `qemu-spice-vm` wrapper that ran
+`qemu-system-x86_64 ... accel=hvf` and a README claiming "x86_64 guests: ~80% of
+bare metal with HVF". Both were wrong; the wrapper failed immediately on the
+hardware it was written for.
+
+## Conflicts with homebrew-core qemu
+
+`qemu-spice` and `qemu` both install `qemu-system-*`, `qemu-img` and friends, so
+they cannot both be linked. The formula declares `conflicts_with "qemu"`.
 
 ```bash
-# Should show "hvf":
-qemu-system-x86_64 -accel help | grep hvf
-
-# Should NOT show error:
-qemu-system-aarch64 -M virt,accel=hvf -cpu host -m 1G -nographic -kernel /dev/null
-# (Will fail on missing kernel, but HVF should initialize)
+brew unlink qemu                       # keep core qemu installed but unlinked
+brew install stuffbucket/qemu-spice/qemu-spice
 ```
 
-### Test SPICE Support
+To switch back:
 
 ```bash
-# Should show SPICE devices:
-qemu-system-x86_64 -device help | grep -i spice
-
-# Expected output includes:
-# name "qxl", bus PCI, desc "Spice QXL GPU (secondary)"
-# name "qxl-vga", bus PCI, desc "Spice QXL GPU (primary, vga compatible)"
+brew uninstall qemu-spice && brew link qemu
 ```
 
-### Test Audio
+## No bottles
+
+This tap builds from source every time — around 10–20 minutes for the six
+targets it configures. Homebrew caches the downloaded QEMU tarball in
+`~/Library/Caches/Homebrew/downloads`, so rebuilds skip the download but still
+recompile.
+
+The formula builds `aarch64`, `arm`, `i386`, `riscv32`, `riscv64` and `x86_64`
+rather than core's full target list, specifically to keep this bearable. If you
+need another target, add it to `TARGETS` in `Formula/qemu-spice.rb` and
+reinstall.
+
+## SPICE without a password is unauthenticated
+
+`disable-ticketing=on` disables authentication entirely. Anyone who can reach
+the port gets full console access to the VM, including keyboard and mouse.
+
+Bind to localhost:
 
 ```bash
-# Should show "coreaudio":
-qemu-system-x86_64 -audiodev help
-
-# Test audio device:
-qemu-system-x86_64 -audiodev coreaudio,id=audio0 -device intel-hda \
-  -device hda-duplex,audiodev=audio0 -m 1G -nographic
+-spice addr=127.0.0.1,port=5900,disable-ticketing=on
 ```
 
----
-
-## Reporting Issues
-
-### Before Reporting
-
-1. Check this document for known issues
-2. Run `./scripts/verify-installation.sh`
-3. Review relevant logs:
-   ```bash
-   # Homebrew build logs:
-   brew log qemu-spice
-
-   # QEMU output:
-   # Add -D /tmp/qemu.log to your command
-
-   # SPICE logs:
-   # Add SPICE_DEBUG=1 environment variable
-   ```
-
-### Information to Include
-
-When reporting issues, include:
-
-1. **System Information**:
-   ```bash
-   sw_vers  # macOS version
-   uname -m  # Architecture
-   sysctl hw.model hw.ncpu hw.memsize  # Hardware
-   ```
-
-2. **QEMU Version**:
-   ```bash
-   qemu-system-x86_64 --version
-   brew list --versions qemu-spice
-   ```
-
-3. **Complete Command**:
-   - Full QEMU command line used
-   - Any error messages
-   - Expected vs actual behavior
-
-4. **Guest Details**:
-   - Guest OS and version
-   - Guest tools installed (yes/no)
-
-### Where to Report
-
-- **Formula issues**: This repository (when published)
-- **QEMU bugs**: https://gitlab.com/qemu-project/qemu/-/issues
-- **SPICE bugs**: https://gitlab.freedesktop.org/spice/spice/-/issues
-- **macOS-specific**: Reference UTM project or homebrew discussions
-
----
-
-## Monitoring for Updates
-
-### Upstream Projects to Watch
-
-1. **QEMU**: https://www.qemu.org/
-   - Watch for 9.1.2+ releases (fixes audio regression)
-
-2. **SPICE**: https://www.spice-space.org/
-   - Monitor macOS compatibility improvements
-
-3. **virglrenderer**: https://gitlab.freedesktop.org/virgl/virglrenderer
-   - Check for official macOS support
-
-4. **libepoxy**: https://github.com/anholt/libepoxy
-   - Watch PR #239 and related EGL patches
-
-### Regular Maintenance
+or set a password via a secret object rather than exposing an open port:
 
 ```bash
-# Check for QEMU updates:
-curl -s https://www.qemu.org/ | grep "QEMU.*released"
-
-# Check virglrenderer fork:
-git ls-remote https://github.com/akihikodaki/virglrenderer.git macos
-
-# Update formula versions as needed
+-object secret,id=sec0,data=yourpassword \
+-spice addr=127.0.0.1,port=5900,password-secret=sec0
 ```
 
----
+For access across a network, tunnel over SSH rather than exposing SPICE
+directly:
 
-## Summary
+```bash
+ssh -N -L 5900:127.0.0.1:5900 user@vmhost
+spicy -h 127.0.0.1 -p 5900
+```
 
-### Important (Be Aware)
+## Clipboard and resolution require a guest agent
 
--  Long build times (30-45 minutes)
--  Conflicts with standard Homebrew packages
--  SPICE remote-viewer connection issues reported
+The vdagent channel on the host side only provides the transport:
 
-### Monitoring (Watch for Changes)
+```bash
+-device virtio-serial-pci \
+-chardev spicevmc,id=vdagent,name=vdagent \
+-device virtserialport,chardev=vdagent,name=com.redhat.spice.0
+```
 
--  macOS OpenGL deprecation
--  Upstream virglrenderer macOS support
--  QEMU HVF improvements
+Clipboard sharing and dynamic resolution need `spice-vdagent` running **inside
+the guest**. On Debian/Ubuntu guests: `apt install spice-vdagent`. On Fedora:
+`dnf install spice-vdagent`.
 
-### Working As Expected
+## Reporting a problem
 
-- HVF acceleration (different performance for ARM64 vs x86_64 guests)
-- SPICE protocol (with workarounds)
-- Audio passthrough (with CoreAudio)
-- USB passthrough (with permissions)
+Include the output of:
 
----
-
-**Last Updated**: October 25, 2025
-**Formula Version**: 1.0.0
-**QEMU Version**: 10.1.2 (latest stable)
-
-See also: [VERSIONS.md](VERSIONS.md) for detailed version information
+```bash
+make status
+make sync-check
+qemu-system-aarch64 --version
+brew config
+```

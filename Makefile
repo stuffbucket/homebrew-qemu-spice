@@ -1,347 +1,95 @@
-# Makefile for QEMU-SPICE Homebrew Tap
-# Leverages Homebrew's native build system and caching
+# Makefile for the qemu-spice Homebrew tap.
+#
+# This tap ships a single formula: homebrew-core's `qemu` with SPICE enabled.
+# See scripts/sync-check.sh for how we stay current with core.
 
-.PHONY: all build clean clean-downloads install test audit help reinstall upgrade
+.PHONY: help sync-check style audit install reinstall uninstall test verify \
+        status deps doctor clean tap-add tap-remove
+
 .DEFAULT_GOAL := help
 
-# Colors for output
-BLUE := \033[0;34m
+BLUE  := \033[0;34m
 GREEN := \033[0;32m
-YELLOW := \033[1;33m
-RED := \033[0;31m
-NC := \033[0m
+YELLOW:= \033[1;33m
+RED   := \033[0;31m
+NC    := \033[0m
 
-# Formulas
-FORMULAS := libepoxy-egl virglrenderer spice-server qemu-spice
-TAP_FORMULAS := libepoxy-egl virglrenderer qemu-spice
-FORMULA_DIR := ./Formula
+TAP     := stuffbucket/qemu-spice
+FORMULA := $(TAP)/qemu-spice
 
-help: ## Show this help message
-	@echo "$(BLUE)QEMU-SPICE Homebrew Tap - Build System$(NC)"
+help: ## Show this help
+	@echo "$(BLUE)qemu-spice tap$(NC)"
 	@echo ""
-	@echo "$(GREEN)Available targets:$(NC)"
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
-		awk 'BEGIN {FS = ":.*?## "}; {printf "  $(BLUE)%-20s$(NC) %s\n", $$1, $$2}'
+		awk 'BEGIN {FS = ":.*?## "}; {printf "  $(BLUE)%-14s$(NC) %s\n", $$1, $$2}'
 	@echo ""
-	@echo "$(YELLOW)Homebrew cache:$(NC) $$(brew --cache)"
-	@echo "$(YELLOW)Tap location:$(NC) $$(pwd)"
+	@echo "$(YELLOW)Tap:$(NC) $(TAP)   $(YELLOW)Cache:$(NC) $$(brew --cache)"
 
-audit: ## Run brew audit and style checks (fast)
-	@echo "$(BLUE)=== Running Style Check ===$(NC)"
-	@brew style $(FORMULA_DIR)/*.rb
-	@echo "$(GREEN)✓ Style check passed$(NC)"
-	@echo ""
-	@echo "$(BLUE)=== Running Formula Syntax Check ===$(NC)"
-	@for formula in $(FORMULA_DIR)/*.rb; do \
-		echo "Checking $$formula..."; \
-		brew ruby -e "require '$$formula'" || exit 1; \
-	done
-	@echo "$(GREEN)✓ Syntax check passed$(NC)"
-	@echo ""
-	@echo "$(YELLOW)Note: Full brew audit requires formulas to be installed in tap$(NC)"
+sync-check: ## Diff our formula against homebrew-core's qemu (drift report)
+	@bash scripts/sync-check.sh
 
-check-deps: ## Check and install build dependencies using brew
-	@echo "$(BLUE)=== Checking Build Dependencies ===$(NC)"
-	@brew list meson >/dev/null 2>&1 || brew install meson
-	@brew list ninja >/dev/null 2>&1 || brew install ninja
-	@brew list pkg-config >/dev/null 2>&1 || brew install pkg-config
-	@brew list glib >/dev/null 2>&1 || brew install glib
-	@brew list pixman >/dev/null 2>&1 || brew install pixman
-	@echo "$(GREEN)✓ All dependencies present$(NC)"
+style: ## Run brew style
+	@brew style Formula/qemu-spice.rb
+	@echo "$(GREEN)✓ style clean$(NC)"
 
-check-conflicts: ## Check for conflicting packages
-	@echo "$(BLUE)=== Checking for Conflicts ===$(NC)"
-	@if brew list qemu >/dev/null 2>&1 || brew list libepoxy >/dev/null 2>&1; then \
-		echo "$(YELLOW)⚠ Found conflicting packages$(NC)"; \
-		echo "$(RED)Run 'make unlink-conflicts' to resolve$(NC)"; \
-		exit 1; \
-	else \
-		echo "$(GREEN)✓ No conflicts found$(NC)"; \
-	fi
+audit: style ## Run brew style + strict audit
+	@brew audit --strict $(FORMULA) && echo "$(GREEN)✓ audit clean$(NC)"
 
-unlink-conflicts: ## Unlink conflicting packages
-	@echo "$(BLUE)=== Unlinking Conflicts ===$(NC)"
-	@brew unlink qemu libepoxy 2>/dev/null || true
-	@echo "$(GREEN)✓ Conflicts resolved$(NC)"
-
-info: ## Show formula information
-	@echo "$(BLUE)=== Formula Information ===$(NC)"
-	@for formula in $(FORMULAS); do \
-		echo ""; \
-		echo "$(YELLOW)$$formula:$(NC)"; \
-		brew info stuffbucket/qemu-spice/$$formula 2>/dev/null || \
-			echo "  Formula not found"; \
-	done
-
-deps: ## Show dependency tree
-	@echo "$(BLUE)=== Dependency Tree ===$(NC)"
-	@brew deps --tree stuffbucket/qemu-spice/qemu-spice
-
-# Individual formula targets
-libepoxy-egl: check-deps ## Build libepoxy-egl (~2-3 min)
-	@echo "$(BLUE)=== Building libepoxy-egl ===$(NC)"
-	@echo "OpenGL function pointer library with EGL support"
-	@START=$$(date +%s); \
-	brew install --HEAD --build-from-source --verbose stuffbucket/qemu-spice/libepoxy-egl && \
-	END=$$(date +%s) && \
-	DURATION=$$((END - START)) && \
-	echo "$(GREEN)✓ libepoxy-egl built in $${DURATION}s$(NC)" || \
-	(echo "$(RED)✗ Build failed. Check 'brew --cache' for logs$(NC)" && exit 1)
-
-virglrenderer: libepoxy-egl ## Build virglrenderer (~3-5 min)
-	@echo "$(BLUE)=== Building virglrenderer ===$(NC)"
-	@echo "Virtual GPU renderer for macOS"
-	@START=$$(date +%s); \
-	brew install --HEAD --build-from-source --verbose stuffbucket/qemu-spice/virglrenderer && \
-	END=$$(date +%s) && \
-	DURATION=$$((END - START)) && \
-	echo "$(GREEN)✓ virglrenderer built in $${DURATION}s$(NC)" || \
-	(echo "$(RED)✗ Build failed. Check 'brew --cache' for logs$(NC)" && exit 1)
-
-spice-server: virglrenderer ## Install spice-server from Homebrew core
-	@echo "$(BLUE)=== Installing spice-server ===$(NC)"
-	@echo "SPICE protocol server library (from Homebrew core)"
-	@# Note: spice-server pulls in libepoxy as dependency (conflicts with our libepoxy-egl)
-	@brew install spice-server 2>&1 | grep -v "brew link --overwrite" || true && \
-	echo "$(GREEN)✓ spice-server installed$(NC)"
-
-qemu-spice: spice-server ## Build qemu-spice (~25-35 min)
+install: ## Build and install qemu-spice from source (~10-20 min)
 	@echo "$(BLUE)=== Building qemu-spice ===$(NC)"
-	@echo "QEMU 10.1.2 with SPICE support and Apple Silicon optimizations"
-	@echo "$(YELLOW)⏱ This will take 25-35 minutes...$(NC)"
+	@echo "$(YELLOW)Conflicts with core qemu; run 'brew unlink qemu' first if needed.$(NC)"
 	@START=$$(date +%s); \
-	brew install --build-from-source --verbose stuffbucket/qemu-spice/qemu-spice && \
-	END=$$(date +%s) && \
-	DURATION=$$((END - START)) && \
-	MINUTES=$$((DURATION / 60)) && \
-	SECONDS=$$((DURATION % 60)) && \
-	echo "$(GREEN)✓ qemu-spice built in $${MINUTES}m $${SECONDS}s$(NC)" || \
-	(echo "$(RED)✗ Build failed. Check 'brew --cache' for logs$(NC)" && exit 1)
+	brew install --build-from-source $(FORMULA) && \
+	D=$$(( $$(date +%s) - START )) && \
+	echo "$(GREEN)✓ built in $$((D / 60))m $$((D % 60))s$(NC)"
 
-build: check-conflicts qemu-spice ## Build all formulas (full build)
+reinstall: ## Force a rebuild from source
+	@brew reinstall --build-from-source $(FORMULA)
+
+uninstall: ## Uninstall qemu-spice
+	@brew uninstall qemu-spice && echo "$(GREEN)✓ uninstalled$(NC)"
+	@echo "$(YELLOW)Run 'brew link qemu' to restore core qemu, and 'brew autoremove'"
+	@echo "to drop spice-server/usbredir if nothing else needs them.$(NC)"
+
+test: ## Run the formula test block plus SPICE smoke checks
+	@brew test $(FORMULA)
 	@echo ""
-	@echo "$(GREEN)========================================$(NC)"
-	@echo "$(GREEN)✓ All formulas built successfully!$(NC)"
-	@echo "$(GREEN)========================================$(NC)"
-
-install: build ## Build and install all formulas (alias for build)
-	@echo "$(GREEN)Installation complete!$(NC)"
-
-reinstall: ## Reinstall all formulas (forces rebuild)
-	@echo "$(BLUE)=== Reinstalling All Formulas ===$(NC)"
-	@for formula in $(FORMULAS); do \
-		echo "Reinstalling $$formula..."; \
-		brew reinstall --build-from-source stuffbucket/qemu-spice/$$formula; \
-	done
-	@echo "$(GREEN)✓ All formulas reinstalled$(NC)"
-
-upgrade: ## Upgrade formulas to latest versions
-	@echo "$(BLUE)=== Upgrading Formulas ===$(NC)"
-	@for formula in $(FORMULAS); do \
-		if brew list $$formula >/dev/null 2>&1; then \
-			echo "Upgrading $$formula..."; \
-			brew upgrade --build-from-source stuffbucket/qemu-spice/$$formula || true; \
-		else \
-			echo "$$formula not installed, skipping"; \
-		fi; \
-	done
-	@echo "$(GREEN)✓ Upgrade complete$(NC)"
-
-test: ## Run brew test on installed formulas
-	@echo "$(BLUE)=== Running Brew Tests ===$(NC)"
-	@for formula in $(FORMULAS); do \
-		if brew list $$formula >/dev/null 2>&1; then \
-			echo "Testing $$formula..."; \
-			brew test $$formula 2>/dev/null || echo "No tests defined for $$formula"; \
-		else \
-			echo "$(YELLOW)⚠ $$formula not installed$(NC)"; \
-		fi; \
-	done
-	@echo ""
-	@echo "$(BLUE)=== Running Quick Smoke Tests ===$(NC)"
-	@echo ""
-	@command -v qemu-system-x86_64 && echo "$(GREEN)✓ qemu-system-x86_64$(NC)" || \
-		(echo "$(RED)✗ qemu-system-x86_64 not found$(NC)" && exit 1)
-	@command -v qemu-system-aarch64 && echo "$(GREEN)✓ qemu-system-aarch64$(NC)" || \
-		(echo "$(RED)✗ qemu-system-aarch64 not found$(NC)" && exit 1)
-	@command -v qemu-img && echo "$(GREEN)✓ qemu-img$(NC)" || \
-		(echo "$(RED)✗ qemu-img not found$(NC)" && exit 1)
-	@echo ""
-	@qemu-system-x86_64 --version | head -1
-	@qemu-system-x86_64 -device help | grep -iq spice && \
-		echo "$(GREEN)✓ SPICE support enabled$(NC)" || \
-		(echo "$(RED)✗ SPICE support missing$(NC)" && exit 1)
+	@echo "$(BLUE)=== SPICE smoke test ===$(NC)"
+	@qemu-system-aarch64 --version | head -1
+	@qemu-system-aarch64 -spice help 2>&1 | grep -q "spice options:" && \
+		echo "$(GREEN)✓ -spice accepted (SPICE compiled in)$(NC)" || \
+		(echo "$(RED)✗ -spice rejected — this build has no SPICE$(NC)" && exit 1)
 	@qemu-system-aarch64 -accel help | grep -q hvf && \
-		echo "$(GREEN)✓ HVF acceleration available$(NC)" || \
-		(echo "$(RED)✗ HVF acceleration missing$(NC)" && exit 1)
+		echo "$(GREEN)✓ HVF available$(NC)" || \
+		(echo "$(RED)✗ HVF missing$(NC)" && exit 1)
+
+verify: ## Run the full verification script
+	@bash scripts/verify-installation.sh
+
+status: ## Show what is installed and linked
+	@echo "$(BLUE)=== Status ===$(NC)"
+	@brew list --versions qemu-spice qemu spice-server usbredir 2>/dev/null || true
 	@echo ""
-	@echo "$(GREEN)✓ All tests passed!$(NC)"
+	@for c in qemu-system-aarch64 qemu-system-x86_64 qemu-img; do \
+		if command -v $$c >/dev/null 2>&1; then \
+			echo "  $(GREEN)✓$(NC) $$c → $$(readlink -f $$(command -v $$c) 2>/dev/null || command -v $$c)"; \
+		else \
+			echo "  $(RED)✗$(NC) $$c not found"; \
+		fi; \
+	done
 
-verify: ## Run verification checks
-	@echo "$(BLUE)=== Running Verification ===$(NC)"
-	@if [ -f scripts/verify-installation.sh ]; then \
-		chmod +x scripts/verify-installation.sh && \
-		echo "n" | ./scripts/verify-installation.sh; \
-	else \
-		echo "Running basic verification..."; \
-		make test; \
-	fi
+deps: ## Show the dependency tree
+	@brew deps --tree $(FORMULA)
 
-doctor: ## Run brew doctor to check for issues
-	@echo "$(BLUE)=== Running Brew Doctor ===$(NC)"
+doctor: ## Run brew doctor
 	@brew doctor || true
 
-show-cache: ## Show Homebrew cache information
-	@echo "$(BLUE)=== Homebrew Cache Information ===$(NC)"
-	@echo "Cache location: $$(brew --cache)"
-	@echo ""
-	@if [ -d "$$(brew --cache)" ]; then \
-		echo "Cache contents:"; \
-		du -sh "$$(brew --cache)"/* 2>/dev/null | sort -h || echo "Empty"; \
-		echo ""; \
-		echo "Total cache size:"; \
-		du -sh "$$(brew --cache)"; \
-	fi
-	@echo ""
-	@echo "Downloads cache:"; \
-	du -sh "$$(brew --cache)/downloads" 2>/dev/null || echo "No downloads cached"
+clean: ## Remove old versions and cached downloads
+	@brew cleanup qemu-spice 2>/dev/null || true
+	@echo "$(GREEN)✓ cleaned$(NC)"
 
-clean-cache: ## Clean Homebrew cache (frees disk space)
-	@echo "$(BLUE)=== Cleaning Homebrew Cache ===$(NC)"
-	@echo "$(YELLOW)⚠ This will remove cached downloads$(NC)"
-	@read -p "Continue? (y/N) " -n 1 -r; \
-	echo ""; \
-	if [[ $$REPLY =~ ^[Yy]$$ ]]; then \
-		brew cleanup -s; \
-		echo "$(GREEN)✓ Cache cleaned$(NC)"; \
-	else \
-		echo "Cancelled"; \
-	fi
+tap-add: ## Add this tap
+	@brew tap $(TAP) && echo "$(GREEN)✓ tapped$(NC)"
 
-clean: ## Clean old formula versions and cache
-	@echo "$(BLUE)=== Cleaning Old Versions ===$(NC)"
-	@brew cleanup
-	@echo "$(GREEN)✓ Cleanup complete$(NC)"
-
-uninstall: ## Uninstall all formulas
-	@echo "$(BLUE)=== Uninstalling Formulas ===$(NC)"
-	@echo "$(YELLOW)⚠ This will remove all installed formulas$(NC)"
-	@read -p "Continue? (y/N) " -n 1 -r; \
-	echo ""; \
-	if [[ $$REPLY =~ ^[Yy]$$ ]]; then \
-		for formula in $$(echo $(FORMULAS) | tac -s' '); do \
-			brew uninstall --ignore-dependencies $$formula 2>/dev/null || true; \
-		done; \
-		echo "$(GREEN)✓ Formulas uninstalled$(NC)"; \
-	else \
-		echo "Cancelled"; \
-	fi
-
-status: ## Show installation status using brew list
-	@echo "$(BLUE)=== Installation Status ===$(NC)"
-	@echo ""
-	@echo "Installed formulas:"
-	@for formula in $(FORMULAS); do \
-		if brew list $$formula >/dev/null 2>&1; then \
-			VERSION=$$(brew list --versions $$formula | awk '{print $$2}'); \
-			INSTALLED=$$(brew info $$formula | grep "Installed" | head -1); \
-			echo "  $(GREEN)✓$(NC) $$formula"; \
-			echo "    Version: $$VERSION"; \
-			brew list --versions $$formula | head -1; \
-		else \
-			echo "  $(RED)✗$(NC) $$formula (not installed)"; \
-		fi; \
-	done
-	@echo ""
-	@echo "Executables:"
-	@for cmd in qemu-system-x86_64 qemu-system-aarch64 qemu-img; do \
-		if command -v $$cmd >/dev/null 2>&1; then \
-			LOC=$$(command -v $$cmd); \
-			echo "  $(GREEN)✓$(NC) $$cmd"; \
-			echo "    → $$LOC"; \
-		else \
-			echo "  $(RED)✗$(NC) $$cmd (not found)"; \
-		fi; \
-	done
-
-links: ## Show formula links and dependencies using brew
-	@echo "$(BLUE)=== Formula Links and Dependencies ===$(NC)"
-	@for formula in $(FORMULAS); do \
-		if brew list $$formula >/dev/null 2>&1; then \
-			echo ""; \
-			echo "$(YELLOW)$$formula:$(NC)"; \
-			brew deps $$formula; \
-		fi; \
-	done
-
-log: ## Show recent Homebrew logs
-	@echo "$(BLUE)=== Recent Homebrew Logs ===$(NC)"
-	@echo "Log location: $$(brew --cache)/Logs"
-	@if [ -d "$$(brew --cache)/Logs" ]; then \
-		ls -lt "$$(brew --cache)/Logs" | head -20; \
-	else \
-		echo "No logs found"; \
-	fi
-
-# GitHub Tap Management
-tap-add: ## Add the GitHub tap (for users installing from GitHub)
-	@echo "$(BLUE)=== Adding GitHub Tap ===$(NC)"
-	@brew tap stuffbucket/qemu-spice || true
-	@echo "$(GREEN)✓ Tap added: stuffbucket/qemu-spice$(NC)"
-	@echo "Now you can install with: brew install stuffbucket/qemu-spice/qemu-spice"
-
-tap-remove: ## Remove the GitHub tap
-	@echo "$(BLUE)=== Removing GitHub Tap ===$(NC)"
-	@brew untap stuffbucket/qemu-spice 2>/dev/null || true
-	@echo "$(GREEN)✓ Tap removed$(NC)"
-
-tap-status: ## Check tap status
-	@echo "$(BLUE)=== Tap Status ===$(NC)"
-	@brew tap | grep -q stuffbucket/qemu-spice && \
-		echo "$(GREEN)✓ Tap is installed$(NC)" || \
-		echo "$(YELLOW)⚠ Tap not installed. Run 'make tap-add' to add it$(NC)"
-	@if brew tap | grep -q stuffbucket/qemu-spice; then \
-		echo ""; \
-		echo "Tap location: $$(brew --repository)/Library/Taps/stuffbucket/homebrew-qemu-spice"; \
-	fi
-
-# Testing and CI
-test-local: audit ## Quick local test (style + syntax only)
-	@echo "$(GREEN)✓ Local tests passed$(NC)"
-	@echo ""
-	@echo "$(YELLOW)For full testing:$(NC)"
-	@echo "  1. Push to GitHub and check CI (validates syntax/style on Linux)"
-	@echo "  2. Test build locally: brew install --build-from-source ./Formula/<name>.rb"
-
-ci-test: ## Simulate CI style checks (syntax only - formulas are macOS-specific)
-	@echo "$(BLUE)=== Simulating CI Style Checks ===$(NC)"
-	@echo "$(YELLOW)Note: Docker can only test syntax/style, not actual builds$(NC)"
-	@echo "$(YELLOW)      (formulas require macOS for building)$(NC)"
-	@echo ""
-	@if command -v docker >/dev/null 2>&1; then \
-		echo "Running style checks in Linux container..."; \
-		docker run --rm -v "$$PWD:/workspace" -w /workspace homebrew/brew:latest bash -c "\
-			brew style Formula/*.rb && \
-			echo '✓ Style check passed'"; \
-		echo "$(GREEN)✓ CI style simulation passed$(NC)"; \
-		echo "$(YELLOW)⚠ To test actual building, use your Mac$(NC)"; \
-	else \
-		echo "$(RED)✗ Docker not installed$(NC)"; \
-		echo "Install Docker to simulate CI style checks locally"; \
-		exit 1; \
-	fi
-
-test-build: ## Test building a formula locally (use: make test-build FORMULA=libepoxy-egl)
-	@if [ -z "$(FORMULA)" ]; then \
-		echo "$(RED)Error: Specify FORMULA=<name>$(NC)"; \
-		echo "Example: make test-build FORMULA=libepoxy-egl"; \
-		exit 1; \
-	fi
-	@echo "$(BLUE)=== Testing Build: $(FORMULA) ===$(NC)"
-	@if [ ! -f "Formula/$(FORMULA).rb" ]; then \
-		echo "$(RED)Error: Formula/$(FORMULA).rb not found$(NC)"; \
-		exit 1; \
-	fi
-	@echo "$(YELLOW)This will build from source (may take time)...$(NC)"
-	@brew install --build-from-source --verbose ./Formula/$(FORMULA).rb
-	@echo "$(GREEN)✓ Build test passed for $(FORMULA)$(NC)"
+tap-remove: ## Remove this tap
+	@brew untap $(TAP) 2>/dev/null || true

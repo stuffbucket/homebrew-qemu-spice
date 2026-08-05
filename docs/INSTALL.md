@@ -1,320 +1,147 @@
-# Installation Guide
+# Installation
 
-Complete installation instructions for QEMU with SPICE support on Apple Silicon.
+## Requirements
 
-## System Requirements
+- macOS (Apple Silicon or Intel)
+- Xcode Command Line Tools — `xcode-select --install`
+- [Homebrew](https://brew.sh)
+- ~5 GB free disk space for the build
+- 10–20 minutes
 
-- **macOS**: 12.0 (Monterey) or later
-- **Hardware**: Apple Silicon Mac (ARM64)
-- **RAM**: 16GB minimum, 32GB+ recommended for running VMs
-- **Disk**: 10GB free space for QEMU + dependencies + VM images
-- **Homebrew**: Latest version
-
-## Installation Methods
-
-### Method 1: GitHub Tap (Recommended)
-
-Now that the formulas are published, this is the easiest method:
+## Install
 
 ```bash
-# 1. Unlink any existing QEMU installation
-brew unlink qemu 2>/dev/null || true
-
-# 2. Add the tap
 brew tap stuffbucket/qemu-spice
-
-# 3. Install dependencies in order
-brew install --HEAD stuffbucket/qemu-spice/libepoxy-egl
-brew install --HEAD stuffbucket/qemu-spice/virglrenderer
-brew install spice-server  # From Homebrew core
-
-# 4. Install QEMU with SPICE
-brew install stuffbucket/qemu-spice/qemu-spice
+brew install --build-from-source stuffbucket/qemu-spice/qemu-spice
 ```
 
-### Method 2: Development with Makefile
+Dependencies (`spice-server`, `usbredir`, `glib`, `pixman`, …) come from
+homebrew-core and install as bottles. Only QEMU itself is compiled.
 
-For developers or contributors working on the formulas:
+### If core qemu is already installed
+
+`qemu-spice` conflicts with `qemu` — both provide `qemu-system-*`. Homebrew will
+refuse to link them together:
 
 ```bash
-# Clone the repository
+brew unlink qemu
+brew install --build-from-source stuffbucket/qemu-spice/qemu-spice
+```
+
+`brew unlink` keeps core qemu installed, just unlinked, so switching back is
+cheap:
+
+```bash
+brew uninstall qemu-spice && brew link qemu
+```
+
+## Verify
+
+```bash
+make verify
+```
+
+or by hand:
+
+```bash
+qemu-system-aarch64 --version              # expect 11.0.3
+qemu-system-aarch64 -spice help            # must list spice options
+qemu-system-aarch64 -accel help            # must include hvf
+```
+
+The `-spice help` check is the one that matters. A QEMU without SPICE compiled
+in responds:
+
+```
+qemu-system-aarch64: -spice: invalid option
+```
+
+Note that `-spice help` exits with status 1 even on success — it prints the
+option list and then stops. Check the output, not the exit code.
+
+## From a git clone
+
+For working on the tap itself:
+
+```bash
 git clone https://github.com/stuffbucket/homebrew-qemu-spice.git
 cd homebrew-qemu-spice
 
-# Check available commands
-make help
-
-# Build everything (handles conflicts and dependencies automatically)
-make build
-
-# Verify installation
-make verify
+make help          # available targets
+make sync-check    # drift vs homebrew-core
+make style         # brew style
+make install       # build from source
+make test          # formula tests + smoke checks
 ```
 
-See `make help` for all available targets (test, status, clean-cache, etc.).
-
-### Method 3: Alternative - Local Tap
-
-If you want to share this tap or install on multiple machines:
+To have Homebrew use your working copy directly instead of the published tap:
 
 ```bash
-# 1. Create a GitHub repository named "homebrew-qemu-spice"
-# 2. Push this directory's contents to the repo
-# 3. Install from the tap:
-
-brew tap yourusername/qemu-spice
-brew install --HEAD libepoxy-egl
-brew install --HEAD virglrenderer
-brew install spice-server  # From Homebrew core
-brew install qemu-spice
+ln -sfn "$PWD" "$(brew --repository)/Library/Taps/stuffbucket/homebrew-qemu-spice"
 ```
 
-## Build Time Expectations
+## Troubleshooting
 
-On Apple Silicon Macs:
-- **libepoxy-egl**: ~2-3 minutes
-- **virglrenderer**: ~3-5 minutes
-- **spice-server**: ~5-7 minutes
-- **qemu-spice**: ~20-30 minutes
+### `Error: qemu-spice: cannot install because conflicting formulae are installed`
 
-Total time: **30-45 minutes**
+Core qemu is linked. Run `brew unlink qemu`, then retry.
 
-## Verification
+### `-spice: invalid option`
 
-After installation, verify everything works:
+You are running core qemu, not this one. Check which binary is on PATH:
 
 ```bash
-# Quick verification with Make
-make verify
-
-# Or run individual checks:
-# Check QEMU version
-qemu-system-x86_64 --version
-qemu-system-aarch64 --version
-
-# Check SPICE support
-qemu-system-x86_64 -device help | grep spice
-qemu-system-x86_64 -device help | grep virtio-vga-gl
-
-# Check HVF (Hypervisor.framework) support
-qemu-system-x86_64 -accel help | grep hvf
-
-# Verify the convenience wrapper exists
-which qemu-spice-vm
+readlink -f "$(command -v qemu-system-aarch64)"
 ```
 
-Expected output:
-```
-QEMU emulator version 10.1.2
-...
-name "qxl", bus PCI, desc "Spice QXL GPU (secondary)"
-name "qxl-vga", bus PCI, desc "Spice QXL GPU (primary, vga compatible)"
-name "virtio-vga-gl"
-...
-Accelerators supported in QEMU binary:
-hvf
-tcg
-...
-/opt/homebrew/bin/qemu-spice-vm
-```
-
-## Post-Installation Setup
-
-### 1. Install SPICE Client (Optional)
-
-For remote access to VMs:
+It should point into `Cellar/qemu-spice/...`. If it points at `Cellar/qemu/...`:
 
 ```bash
-brew install virt-viewer
+brew unlink qemu && brew link qemu-spice
 ```
 
-### 2. Create a VMs Directory
+### `invalid accelerator hvf`
+
+You are trying to use HVF for a guest architecture that does not match the
+host. HVF only accelerates same-architecture guests — on Apple Silicon that
+means `qemu-system-aarch64`. Drop `-accel hvf` to fall back to TCG emulation,
+which works for any architecture but is much slower. See
+[KNOWN-ISSUES.md](KNOWN-ISSUES.md).
+
+### `OpenGL is not supported by display backend 'cocoa'` / `Invalid parameter 'gl'`
+
+There is no GL support in QEMU on macOS and there cannot be. Remove `gl=on`
+from your `-display` and `-spice` options. See
+[KNOWN-ISSUES.md](KNOWN-ISSUES.md) for the full explanation.
+
+### Build fails
+
+Homebrew keeps build logs:
 
 ```bash
-mkdir -p ~/VMs
-cd ~/VMs
+ls -lt ~/Library/Caches/Homebrew/Logs/qemu-spice/
 ```
 
-### 3. Download a Test ISO
+Check that the formula is current first:
 
-For ARM64 (native, best performance):
 ```bash
-# Alpine Linux ARM64 (small, fast download)
-wget https://dl-cdn.alpinelinux.org/alpine/v3.19/releases/aarch64/alpine-virt-3.19.0-aarch64.iso
+make sync-check
 ```
 
-For x86_64 (good compatibility):
-```bash
-# Alpine Linux x86_64 (small, fast download)
-wget https://dl-cdn.alpinelinux.org/alpine/v3.19/releases/x86_64/alpine-virt-3.19.0-x86_64.iso
-```
+If it reports drift, homebrew-core has moved and the formula needs updating —
+that is the most common cause of a stale build breaking.
 
-### 4. Create Your First VM
+### Reclaiming space after a build
 
 ```bash
-# Create a 10GB disk
-qemu-img create -f qcow2 ~/VMs/test.qcow2 10G
-
-# Start the VM
-qemu-spice-vm \
-  -cdrom ~/VMs/alpine-virt-3.19.0-x86_64.iso \
-  -hda ~/VMs/test.qcow2 \
-  -boot d \
-  -m 2G -smp 2
-```
-
-## Troubleshooting Installation
-
-### Issue: Build fails with "unknown type name"
-
-**Solution**: Make sure you have Xcode Command Line Tools installed:
-```bash
-xcode-select --install
-```
-
-### Issue: "cannot find -lepoxy" error
-
-**Solution**: libepoxy-egl must be installed first:
-```bash
-brew install --HEAD ./Formula/libepoxy-egl.rb
-```
-
-### Issue: Meson/Ninja not found
-
-**Solution**: Install build dependencies:
-```bash
-brew install meson ninja pkg-config
-```
-
-### Issue: SPICE-server fails to build
-
-**Solution**: Check that spice-protocol is installed:
-```bash
-brew install spice-protocol
-brew install ./Formula/spice-server.rb
-```
-
-### Issue: QEMU configure fails
-
-**Solution**: Check the build logs:
-```bash
-# View logs for the most recent build
-ls -lt $(brew --cache)/Logs/ | head -5
-
-# Check specific formula logs
-cat $(brew --cache)/Logs/qemu-spice/*.log | tail -100
-```
-
-Look for missing dependencies and install them.
-
-### Issue: Conflicts with existing libepoxy
-
-**Solution**: Unlink the standard libepoxy:
-```bash
-brew unlink libepoxy
-brew install --HEAD ./Formula/libepoxy-egl.rb
-```
-
-### Issue: Python version errors
-
-**Solution**: Ensure Python 3.12 is available:
-```bash
-brew install python@3.12
-```
-
-## Reinstallation
-
-To reinstall from scratch:
-
-**Using Makefile:**
-```bash
-# Uninstall and clean
-make uninstall
-make clean-cache
-
-# Rebuild
-make build
-```
-
-**Using Homebrew directly:**
-```bash
-# Uninstall everything
-brew uninstall qemu-spice spice-server virglrenderer libepoxy-egl
-
-# Clean up any cached builds
 brew cleanup -s
-
-# Reinstall
-brew install --HEAD ./Formula/libepoxy-egl.rb
-brew install --HEAD ./Formula/virglrenderer.rb
-brew install ./Formula/spice-server.rb
-brew install ./Formula/qemu-spice.rb
 ```
 
-## Updating
-
-When new versions are available:
+## Uninstall
 
 ```bash
-# Update tap
-brew update
-
-# Reinstall with new versions
-brew reinstall stuffbucket/qemu-spice/qemu-spice
-```
-
-Or manually update the version numbers in the formulas and reinstall.
-
-## Uninstallation
-
-Complete removal:
-
-```bash
-# Uninstall QEMU and dependencies
 brew uninstall qemu-spice
-brew uninstall spice-server
-brew uninstall virglrenderer
-brew uninstall libepoxy-egl
-
-# Remove tap (if using one)
-brew untap yourusername/qemu-spice
-
-# Reinstall standard QEMU if desired
-brew install qemu
+brew untap stuffbucket/qemu-spice
+brew link qemu              # if you want core qemu back
+brew autoremove             # drop spice-server/usbredir if unused
 ```
-
-## Advanced: Building Specific Targets
-
-If you only want specific architectures:
-
-Edit `qemu-spice.rb` and modify the target_list:
-
-```ruby
-target_list = %w[
-  x86_64-softmmu
-  # Remove others you don't need
-]
-```
-
-This will reduce build time significantly.
-
-## Next Steps
-
-After successful installation:
-
-1. Read the main [README.md](README.md) for usage examples
-2. Check [EXAMPLES.md](EXAMPLES.md) for common VM configurations
-3. Review [PERFORMANCE.md](PERFORMANCE.md) for optimization tips
-
-## Getting Help
-
-If you encounter issues:
-
-1. Check the troubleshooting section above
-2. Review build logs: `ls $(brew --cache)/Logs/`
-3. Run verification: `make verify`
-4. Check status: `make status`
-5. Open an issue with:
-   - Your macOS version: `sw_vers`
-   - Your Mac model: `system_profiler SPHardwareDataType | grep "Model"`
-   - Build logs from `$(brew --cache)/Logs/`

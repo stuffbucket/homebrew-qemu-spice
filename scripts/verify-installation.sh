@@ -1,241 +1,186 @@
-#!/bin/bash
-# Verification script for QEMU-SPICE installation
-# Run this after installation to verify everything works
+#!/usr/bin/env bash
+#
+# verify-installation.sh — check that the installed qemu-spice actually works.
+#
+# The load-bearing check is SPICE support: a QEMU without it rejects -spice as
+# an invalid option, which is exactly what homebrew-core's qemu does. Everything
+# else here is secondary.
 
-set -e
+set -uo pipefail
 
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-NC='\033[0m' # No Color
+if [ -t 1 ]; then
+  RED=$'\033[0;31m'; GREEN=$'\033[0;32m'; YELLOW=$'\033[1;33m'; BLUE=$'\033[0;34m'; NC=$'\033[0m'
+else
+  RED=""; GREEN=""; YELLOW=""; BLUE=""; NC=""
+fi
 
-echo "=========================================="
-echo "QEMU-SPICE Installation Verification"
-echo "=========================================="
-echo ""
+pass=0; fail=0; warn=0
 
-# Function to check command exists
-check_command() {
-    if command -v "$1" &> /dev/null; then
-        echo -e "${GREEN}✓${NC} $1 found"
-        return 0
-    else
-        echo -e "${RED}✗${NC} $1 not found"
-        return 1
-    fi
+ok()    { printf '  %s✓%s %s\n' "$GREEN" "$NC" "$1"; pass=$((pass + 1)); }
+bad()   { printf '  %s✗%s %s\n' "$RED" "$NC" "$1";   fail=$((fail + 1)); }
+note()  { printf '  %s⚠%s %s\n' "$YELLOW" "$NC" "$1"; warn=$((warn + 1)); }
+section() { printf '\n%s=== %s ===%s\n' "$BLUE" "$1" "$NC"; }
+
+# matches <pattern> <command...> — run command, grep its output for pattern.
+# QEMU's help subcommands exit non-zero (`-spice help` and `-chardev help` both
+# exit 1), so we capture the output first rather than piping directly: under
+# `set -o pipefail` a non-zero producer would fail the pipeline even when grep
+# matched, which silently turns working features into reported failures.
+matches() {
+  local pattern="$1"; shift
+  local out
+  out="$("$@" 2>&1)" || true
+  printf '%s\n' "$out" | grep -qE "$pattern"
 }
 
-# Function to check feature
-check_feature() {
-    if $1 | grep -q "$2"; then
-        echo -e "${GREEN}✓${NC} $3"
-        return 0
+section "Binaries"
+for b in qemu-system-aarch64 qemu-system-x86_64 qemu-img; do
+  if command -v "$b" >/dev/null 2>&1; then
+    ok "$b — $(command -v "$b")"
+  else
+    bad "$b not found on PATH"
+  fi
+done
+
+if ! command -v qemu-system-aarch64 >/dev/null 2>&1; then
+  printf '\n%sCannot continue: qemu-system-aarch64 not on PATH.%s\n' "$RED" "$NC"
+  printf 'Install with: brew install --build-from-source stuffbucket/qemu-spice/qemu-spice\n'
+  exit 1
+fi
+
+section "Which build is linked"
+target="$(command -v qemu-system-aarch64)"
+resolved="$(python3 -c 'import os,sys;print(os.path.realpath(sys.argv[1]))' "$target" 2>/dev/null || echo "$target")"
+printf '  %s\n' "$resolved"
+case "$resolved" in
+  *qemu-spice*) ok "linked build comes from the qemu-spice tap" ;;
+  *)            note "this is not the qemu-spice build; SPICE checks will likely fail" ;;
+esac
+printf '  version: %s\n' "$(qemu-system-aarch64 --version 2>/dev/null | head -1)"
+
+section "SPICE support (the reason this tap exists)"
+if matches 'spice options:' qemu-system-aarch64 -spice help; then
+  ok "-spice accepted, server options available"
+else
+  bad "-spice rejected — this QEMU has no SPICE support"
+  printf '      A core-qemu build responds: "qemu-system-aarch64: -spice: invalid option"\n'
+  printf '      Fix: brew unlink qemu && brew link qemu-spice\n'
+fi
+
+for dev in qxl qxl-vga usb-redir; do
+  if matches "name \"$dev\"" qemu-system-x86_64 -device help; then
+    ok "device $dev"
+  else
+    bad "device $dev missing"
+  fi
+done
+
+if matches 'name "virtio-gpu-pci"' qemu-system-aarch64 -device help; then
+  ok "device virtio-gpu-pci (aarch64 guest display)"
+else
+  bad "device virtio-gpu-pci missing"
+fi
+
+# `-chardev help` needs a machine to be selected, hence -M none.
+if matches 'spicevmc' qemu-system-aarch64 -M none -chardev help; then
+  ok "chardev spicevmc (vdagent / usbredir transport)"
+else
+  bad "chardev spicevmc missing"
+fi
+
+section "Acceleration"
+accel="tcg"
+if matches 'hvf' qemu-system-aarch64 -accel help; then
+  ok "HVF available for aarch64 guests"
+  accel="hvf"
+else
+  note "HVF not available — guests will run under TCG emulation"
+fi
+
+if [ "$(uname -m)" = "arm64" ]; then
+  # HVF only virtualises the host architecture. x86_64 + hvf is expected to fail
+  # on Apple Silicon; that is not a defect in this build.
+  if matches '^hvf$' qemu-system-x86_64 -accel help; then
+    note "x86_64 reports hvf — unexpected on Apple Silicon"
+  else
+    ok "x86_64 correctly has no HVF on Apple Silicon (TCG only)"
+  fi
+fi
+
+section "GPU acceleration (expected to be absent)"
+# These must NOT be present. QEMU needs CONFIG_GBM for any GL path and macOS has
+# no GBM, so a build advertising them would be misleading. See docs/KNOWN-ISSUES.md.
+if matches 'virtio-gpu-gl' qemu-system-aarch64 -device help; then
+  note "virtio-gpu-gl present but cannot bind on macOS — see docs/KNOWN-ISSUES.md"
+else
+  ok "no GL device variants (correct for macOS)"
+fi
+
+if matches 'gl=' qemu-system-aarch64 -spice help; then
+  note "-spice advertises gl= but it cannot work without GBM"
+else
+  ok "-spice has no gl= option (correct for macOS)"
+fi
+
+section "Live SPICE server test"
+port=5987
+tmpdir="$(mktemp -d)"
+disk="$tmpdir/verify.qcow2"
+
+if qemu-img create -f qcow2 "$disk" 32M >/dev/null 2>&1; then
+  cpu_args=""
+  [ "$accel" = "hvf" ] && cpu_args="-cpu host"
+
+  # shellcheck disable=SC2086
+  qemu-system-aarch64 -M virt -accel "$accel" $cpu_args \
+    -m 256M -device virtio-gpu-pci -display none \
+    -spice "addr=127.0.0.1,port=$port,disable-ticketing=on" \
+    -device virtio-serial-pci \
+    -chardev spicevmc,id=vdagent,name=vdagent \
+    -device virtserialport,chardev=vdagent,name=com.redhat.spice.0 \
+    -drive file="$disk",if=virtio -S >"$tmpdir/vm.log" 2>&1 &
+  vmpid=$!
+  sleep 3
+
+  if kill -0 "$vmpid" 2>/dev/null; then
+    ok "VM started with SPICE (accel=$accel)"
+    if python3 - "$port" <<'PY'
+import socket, struct, sys
+port = int(sys.argv[1])
+try:
+    s = socket.create_connection(("127.0.0.1", port), 3)
+    # SpiceLinkHeader: magic "REDQ", major, minor, size
+    s.sendall(struct.pack("<4sIIII", b"REDQ", 2, 2, 16, 0) + b"\0" * 12)
+    good = s.recv(16)[:4] == b"REDQ"
+    s.close()
+    sys.exit(0 if good else 1)
+except Exception:
+    sys.exit(1)
+PY
+    then
+      ok "SPICE server completed a protocol handshake on port $port"
     else
-        echo -e "${RED}✗${NC} $3"
-        return 1
+      bad "SPICE port did not respond with a valid handshake"
     fi
-}
+  else
+    bad "VM failed to start"
+    sed 's/^/      /' "$tmpdir/vm.log" | head -5
+  fi
 
-echo "1. Checking QEMU Installation..."
-echo "-----------------------------------"
-check_command "qemu-system-x86_64" || exit 1
-check_command "qemu-system-aarch64" || exit 1
-check_command "qemu-img" || exit 1
-check_command "qemu-spice-vm" || exit 1
-echo ""
-
-echo "2. Checking QEMU Version..."
-echo "-----------------------------------"
-VERSION=$(qemu-system-x86_64 --version | head -n1)
-echo "   $VERSION"
-if [[ "$VERSION" == *"10.1"* ]]; then
-    echo -e "${GREEN}✓${NC} Version 10.1.x detected (expected)"
-elif [[ "$VERSION" == *"10."* ]]; then
-    echo -e "${GREEN}✓${NC} QEMU 10.x detected"
+  kill "$vmpid" 2>/dev/null
+  wait "$vmpid" 2>/dev/null
 else
-    echo -e "${YELLOW}⚠${NC} Expected QEMU 10.1.2, got: $VERSION"
+  bad "qemu-img could not create a test disk"
 fi
-echo ""
+rm -rf "$tmpdir"
 
-echo "3. Checking SPICE Support..."
-echo "-----------------------------------"
-check_feature "qemu-system-x86_64 -device help" "qxl" "SPICE QXL GPU" || exit 1
-check_feature "qemu-system-x86_64 -device help" "virtio-vga-gl" "VirtIO VGA with GL (x86_64)" || exit 1
-check_feature "qemu-system-aarch64 -device help" "virtio-gpu-gl" "VirtIO GPU with GL (aarch64)" || exit 1
-check_feature "qemu-system-x86_64 -device help" "virtserialport" "VirtIO serial port" || exit 1
-echo ""
+section "Summary"
+printf '  %spassed: %d%s   %sfailed: %d%s   %swarnings: %d%s\n' \
+  "$GREEN" "$pass" "$NC" "$RED" "$fail" "$NC" "$YELLOW" "$warn" "$NC"
 
-echo "4. Checking SPICE Protocol..."
-echo "-----------------------------------"
-if qemu-system-aarch64 -spice help 2>&1 | grep -q "port="; then
-    echo -e "${GREEN}✓${NC} SPICE protocol available"
-    # Check for key SPICE features (help command returns error code, so disable exit-on-error temporarily)
-    set +e
-    SPICE_HELP=$(qemu-system-aarch64 -spice help 2>&1)
-    set -e
-    if echo "$SPICE_HELP" | grep -q "agent-mouse="; then
-        echo -e "${GREEN}✓${NC} SPICE agent support"
-    fi
-    if echo "$SPICE_HELP" | grep -q "streaming-video="; then
-        echo -e "${GREEN}✓${NC} SPICE video streaming"
-    fi
-    # Note: gl= is Linux-only (X11/Wayland), macOS uses VirGL + Cocoa for GPU acceleration
-else
-    echo -e "${RED}✗${NC} SPICE protocol not available"
-    exit 1
+if [ "$fail" -gt 0 ]; then
+  printf '\n%sVerification failed.%s See docs/INSTALL.md for troubleshooting.\n' "$RED" "$NC"
+  exit 1
 fi
-echo ""
-
-echo "5. Checking Accelerator Support..."
-echo "-----------------------------------"
-# HVF is only available for native architecture on Apple Silicon
-if [[ $(uname -m) == "arm64" ]]; then
-    check_feature "qemu-system-aarch64 -accel help" "hvf" "HVF (Hypervisor.framework) - native arm64" || echo -e "${YELLOW}⚠${NC} HVF not available"
-    # Verify x86_64 does NOT have HVF (expected)
-    if qemu-system-x86_64 -accel help 2>&1 | grep -q "^hvf$"; then
-        echo -e "${YELLOW}⚠${NC} Unexpected: HVF in x86_64 binary (should not happen)"
-    else
-        echo -e "${GREEN}✓${NC} x86_64 correctly uses TCG only (no HVF)"
-    fi
-else
-    echo -e "${YELLOW}⚠${NC} HVF only available on Apple Silicon (current: $(uname -m))"
-fi
-check_feature "qemu-system-x86_64 -accel help" "tcg" "TCG (software emulation)" || exit 1
-echo ""
-
-echo "6. Checking Device Support..."
-echo "-----------------------------------"
-check_feature "qemu-system-x86_64 -device help" "virtio-net-pci" "VirtIO Network" || exit 1
-check_feature "qemu-system-x86_64 -device help" "virtio-blk-pci" "VirtIO Block" || exit 1
-check_feature "qemu-system-x86_64 -device help" "usb-tablet" "USB Tablet" || exit 1
-check_feature "qemu-system-x86_64 -device help" "usb-host" "USB Host (passthrough)" || exit 1
-check_feature "qemu-system-x86_64 -device help" "intel-hda" "Intel HDA Audio" || exit 1
-echo ""
-
-echo "7. Checking Network Backend Support..."
-echo "-----------------------------------"
-NETDEV_HELP=$(qemu-system-aarch64 -machine virt -netdev help 2>&1)
-echo "$NETDEV_HELP" | grep -q "user" && echo -e "${GREEN}✓${NC} User mode networking (SLIRP)"
-echo "$NETDEV_HELP" | grep -q "tap" && echo -e "${GREEN}✓${NC} TAP networking"
-echo "$NETDEV_HELP" | grep -q "vmnet" && echo -e "${GREEN}✓${NC} vmnet networking (macOS)" || echo -e "${YELLOW}⚠${NC} vmnet not available (optional)"
-echo ""
-
-echo "8. Checking Storage Format Support..."
-echo "-----------------------------------"
-qemu-img --help | grep -q "qcow2" && echo -e "${GREEN}✓${NC} QCOW2 format supported" || exit 1
-qemu-img --help | grep -q "raw" && echo -e "${GREEN}✓${NC} RAW format supported" || exit 1
-# Test image creation
-TEST_IMG="/tmp/qemu-verify-test-$$.qcow2"
-if qemu-img create -f qcow2 "$TEST_IMG" 1M >/dev/null 2>&1; then
-    echo -e "${GREEN}✓${NC} Image creation works"
-    rm -f "$TEST_IMG"
-else
-    echo -e "${RED}✗${NC} Image creation failed"
-fi
-echo ""
-
-echo "9. Checking ARM64 Support..."
-echo "-----------------------------------"
-check_feature "qemu-system-aarch64 -machine help" "virt" "ARM virt machine" || exit 1
-check_feature "qemu-system-aarch64 -device help" "virtio-gpu-gl-pci" "VirtIO GPU with GL" || exit 1
-echo ""
-
-echo "10. Checking System Requirements..."
-echo "-----------------------------------"
-if [[ $(uname -m) == "arm64" ]]; then
-    echo -e "${GREEN}✓${NC} Running on Apple Silicon (ARM64)"
-    if sysctl kern.hv_support 2>/dev/null | grep -q "kern.hv_support: 1"; then
-        echo -e "${GREEN}✓${NC} Hypervisor.framework available"
-    else
-        echo -e "${RED}✗${NC} Hypervisor.framework not available"
-    fi
-else
-    echo -e "${YELLOW}⚠${NC} Not running on Apple Silicon ($(uname -m))"
-fi
-echo ""
-
-echo "11. Checking Dependencies..."
-echo "-----------------------------------"
-check_command "pkg-config" || exit 1
-if pkg-config --exists glib-2.0; then
-    echo -e "${GREEN}✓${NC} GLib found"
-fi
-if pkg-config --exists spice-server; then
-    echo -e "${GREEN}✓${NC} SPICE server library found"
-fi
-if pkg-config --exists epoxy; then
-    echo -e "${GREEN}✓${NC} libepoxy found"
-fi
-if pkg-config --exists virglrenderer; then
-    echo -e "${GREEN}✓${NC} virglrenderer found"
-fi
-echo ""
-
-echo "12. Creating Test VM (optional)..."
-echo "-----------------------------------"
-read -p "Would you like to create a test VM? (y/N) " -n 1 -r
-echo ""
-if [[ $REPLY =~ ^[Yy]$ ]]; then
-    TEST_DIR="$HOME/VMs/qemu-test"
-    mkdir -p "$TEST_DIR"
-
-    echo "Creating 1GB test disk..."
-    if qemu-img create -f qcow2 "$TEST_DIR/test.qcow2" 1G; then
-        echo -e "${GREEN}✓${NC} Test disk created at $TEST_DIR/test.qcow2"
-
-        echo ""
-        echo "Testing QEMU startup (native architecture)..."
-        # Use native architecture (aarch64 on Apple Silicon) for HVF support
-        if [[ $(uname -m) == "arm64" ]]; then
-            QEMU_BIN="qemu-system-aarch64"
-            MACHINE_ARGS="-machine virt,accel=hvf -cpu host"
-            GPU_DEVICE="virtio-gpu-gl"
-        else
-            QEMU_BIN="qemu-system-x86_64"
-            MACHINE_ARGS="-machine q35,accel=tcg"
-            GPU_DEVICE="virtio-vga-gl"
-        fi
-        
-        # Just verify QEMU can start with the config (exits immediately with -S)
-        if $QEMU_BIN \
-            $MACHINE_ARGS -smp 2 -m 1G \
-            -device $GPU_DEVICE \
-            -display none \
-            -S \
-            -drive file="$TEST_DIR/test.qcow2",format=qcow2,if=virtio 2>/dev/null &
-        then
-            QEMU_PID=$!
-            sleep 0.5
-            if kill -0 $QEMU_PID 2>/dev/null; then
-                kill $QEMU_PID 2>/dev/null
-                wait $QEMU_PID 2>/dev/null
-                echo -e "${GREEN}✓${NC} QEMU startup test passed"
-            else
-                echo -e "${RED}✗${NC} QEMU crashed on startup"
-            fi
-        else
-            echo -e "${RED}✗${NC} QEMU failed to start"
-        fi
-
-        echo ""
-        echo "Test disk can be deleted with:"
-        echo "  rm -rf $TEST_DIR"
-    fi
-fi
-echo ""
-
-echo "=========================================="
-echo "Verification Complete!"
-echo "=========================================="
-echo ""
-echo "Next steps:"
-echo "  1. Read QUICKSTART.md to create your first VM"
-echo "  2. See EXAMPLES.md for common configurations"
-echo "  3. Check README.md for full documentation"
-echo ""
-echo "Quick test command:"
-echo "  mkdir -p ~/VMs"
-echo "  cd ~/VMs"
-echo "  qemu-img create -f qcow2 test.qcow2 10G"
-echo "  qemu-spice-vm -hda test.qcow2 -m 2G -smp 2"
-echo ""
+printf '\n%sqemu-spice is installed and serving SPICE correctly.%s\n' "$GREEN" "$NC"
+exit 0
