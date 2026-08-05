@@ -1,323 +1,194 @@
 # homebrew-qemu-spice
 
-QEMU 10.1.2 with SPICE protocol support for Apple Silicon macOS.
+QEMU with SPICE remote-display support for macOS.
+
+This tap ships **one formula**: `qemu-spice`, which is homebrew-core's `qemu`
+formula with SPICE enabled. Nothing else is patched, forked, or pinned.
+
+## Why this tap exists
+
+Homebrew-core deliberately does not ship QEMU with SPICE. It was enabled in
+[Homebrew/homebrew-core#226935](https://github.com/Homebrew/homebrew-core/pull/226935)
+and reverted a week later by
+[#227722](https://github.com/Homebrew/homebrew-core/pull/227722) with the reason
+*"Too many dependencies"* — `spice-server` pulls in `gstreamer`, `opus`, `orc`
+and `openssl@3`, which core did not want in every QEMU install.
+
+So `brew install qemu` gives you a QEMU that rejects `-spice` as an invalid
+option. If you want SPICE you need a build configured with `--enable-spice`.
+That is the entire purpose of this tap.
+
+If homebrew-core ever adds `spice-server` back, this tap becomes unnecessary —
+`make sync-check` detects that case and tells you.
 
 ## Requirements
 
-- **macOS 12.0 (Monterey) or later**
-- **Apple Silicon (M1/M2/M3/M4)** - Optimized for ARM64 architecture
-- **Xcode Command Line Tools** - `xcode-select --install`
-- **Homebrew** - [Install Homebrew](https://brew.sh)
-
-> **Note:** While Intel Macs may work, this tap is specifically optimized for Apple Silicon with HVF (Hypervisor.framework) acceleration and ARM64 optimizations.
-
-## Features
-
-- QEMU 10.1.2 with SPICE protocol support
-- Apple Silicon ARM64 optimizations (`-march=armv8.5-a`)
-- HVF (Hypervisor.framework) acceleration
-- GPU acceleration via virglrenderer
-- CoreAudio passthrough with Intel HDA
-- USB device passthrough
-- VirtIO paravirtualized devices
+- macOS (Apple Silicon or Intel)
+- Xcode Command Line Tools — `xcode-select --install`
+- [Homebrew](https://brew.sh)
 
 ## Installation
 
-### Using Homebrew Tap
-
 ```bash
-# Unlink existing QEMU if installed (optional)
-brew unlink qemu 2>/dev/null || true
-
-# Install QEMU with SPICE (automatically adds tap and installs dependencies)
-brew install stuffbucket/qemu-spice/qemu-spice
-
-or
-
 brew tap stuffbucket/qemu-spice
-brew install qemu-spice
+brew install --build-from-source stuffbucket/qemu-spice/qemu-spice
 ```
 
-The format is `user/tap/formula`. All dependencies (`libepoxy-egl`, `virglrenderer`, `spice-server`) are automatically installed by the formula.
+This tap publishes no bottles, so it always builds from source. Expect roughly
+10–20 minutes.
 
-### For Development: Using Makefile
-
-If you're developing or contributing to the formulas:
+`qemu-spice` conflicts with core `qemu` — both install `qemu-system-*` binaries.
+If you already have core qemu installed:
 
 ```bash
-# Clone the repository
-git clone https://github.com/stuffbucket/homebrew-qemu-spice.git
-cd homebrew-qemu-spice
-
-# Check what's available
-make help
-
-# Build everything (handles dependencies automatically)
-make build
-
-# Or build step-by-step
-make check-deps
-make libepoxy-egl
-make virglrenderer
-make spice-server
-make qemu-spice
-
-# Run tests
-make test
-make verify
-
-# Check installation status
-make status
+brew unlink qemu
 ```
 
-## Download Caching
-
-Homebrew automatically caches downloaded sources in `~/Library/Caches/Homebrew/downloads`. This means:
-
-- **First build:** Downloads all sources (~200MB for QEMU alone)
-- **Rebuilds:** Reuses cached files, only rebuilds changed code
-- **Clean cache:** `make clean-downloads` (or `brew cleanup -s`)
-- **Check cache:** `make show-cache`
-
-The Makefile leverages this caching automatically, making rebuilds much faster.
-
-## Quick Start
-
-### ARM64 Linux VM (Best Performance)
+To go back to core qemu later:
 
 ```bash
-# Create VM directory
+brew uninstall qemu-spice && brew link qemu
+```
+
+## Quick start
+
+Create a disk and boot an ARM64 Linux ISO with a SPICE server attached. On
+Apple Silicon this is the fast path — HVF accelerates aarch64 guests natively.
+
+```bash
 mkdir -p ~/VMs && cd ~/VMs
+qemu-img create -f qcow2 linux-arm64.qcow2 40G
 
-# Create disk
-qemu-img create -f qcow2 ubuntu-arm64.qcow2 80G
-
-# Download Ubuntu ARM64
-wget https://cdimage.ubuntu.com/releases/24.04/release/ubuntu-24.04-desktop-arm64.iso
-
-# Start VM
 qemu-system-aarch64 \
-  -machine virt,accel=hvf,highmem=on \
-  -cpu host -smp 8 -m 16G \
+  -M virt,accel=hvf,highmem=on -cpu host -smp 4 -m 8G \
   -bios /opt/homebrew/share/qemu/edk2-aarch64-code.fd \
   -device virtio-gpu-pci \
-  -display cocoa,show-cursor=on \
-  -audio coreaudio \
-  -device intel-hda -device hda-duplex \
+  -display none \
+  -spice addr=127.0.0.1,port=5900,disable-ticketing=on \
+  -device virtio-serial-pci \
+  -chardev spicevmc,id=vdagent,name=vdagent \
+  -device virtserialport,chardev=vdagent,name=com.redhat.spice.0 \
+  -audiodev coreaudio,id=audio0 \
+  -device intel-hda -device hda-duplex,audiodev=audio0 \
+  -device qemu-xhci,id=xhci -device usb-tablet \
   -netdev user,id=net0,hostfwd=tcp::2222-:22 \
   -device virtio-net-pci,netdev=net0 \
   -device virtio-rng-pci \
-  -device virtio-keyboard-pci \
-  -device virtio-mouse-pci \
-  -serial stdio \
-  -drive file=ubuntu-arm64.qcow2,if=virtio \
-  -cdrom ubuntu-24.04-desktop-arm64.iso
+  -drive file=linux-arm64.qcow2,if=virtio \
+  -cdrom your-distro-arm64.iso
 ```
 
-### x86_64 Linux VM
+Connect a client:
 
 ```bash
-# Create disk
-qemu-img create -f qcow2 ubuntu-x86_64.qcow2 80G
-
-# Download Ubuntu x86_64
-wget https://releases.ubuntu.com/24.04/ubuntu-24.04-desktop-amd64.iso
-
-# Start VM
-qemu-system-x86_64 \
-  -machine q35,accel=hvf \
-  -cpu host -smp 8 -m 16G \
-  -device virtio-vga \
-  -display cocoa,show-cursor=on \
-  -spice port=5900,addr=127.0.0.1,disable-ticketing=on,streaming-video=filter \
-  -audio coreaudio \
-  -device intel-hda -device hda-duplex \
-  -netdev user,id=net0,hostfwd=tcp::2222-:22 \
-  -device virtio-net-pci,netdev=net0 \
-  -device virtio-rng-pci \
-  -device virtio-keyboard-pci \
-  -device virtio-mouse-pci \
-  -serial stdio \
-  -drive file=ubuntu-x86_64.qcow2,if=virtio \
-  -cdrom ubuntu-24.04-desktop-amd64.iso
+brew install spice-gtk
+spicy -h 127.0.0.1 -p 5900
 ```
 
-## Performance
+`spice-gtk` is the SPICE client library and ships the `spicy` viewer. Note that
+`virt-viewer` / `remote-viewer` is **not** packaged for macOS in Homebrew —
+there is no `virt-viewer` formula or cask. If you prefer `remote-viewer`, run it
+from a Linux box and point it at the host, or use [UTM](https://mac.getutm.app/),
+which bundles its own SPICE client.
 
-On Apple Silicon with HVF acceleration:
+`disable-ticketing=on` means no password. It is bound to `127.0.0.1` above so
+it is not reachable from the network. If you need remote access, set a password
+rather than exposing an unauthenticated port.
 
-| Guest Architecture | Expected Performance |
-|-------------------|---------------------|
-| ARM64 (native) | ~95% of bare metal |
-| x86_64 (emulated) | ~80% of bare metal |
+Install `spice-vdagent` inside the guest to get clipboard sharing and automatic
+resolution changes through the vdagent channel configured above.
 
-## Components
+### USB redirection over SPICE
 
-### qemu-spice
+`--enable-usb-redir` is compiled in:
 
-QEMU 10.1.2 with SPICE support and Apple Silicon optimizations.
+```bash
+  -device qemu-xhci,id=xhci \
+  -chardev spicevmc,name=usbredir,id=usbredir1 \
+  -device usb-redir,chardev=usbredir1,bus=xhci.0
+```
 
-### spice-server
+Then pick the device in your SPICE client's USB device selection dialog.
 
-SPICE server library 0.16.0 (installed from Homebrew core).
+See [docs/SPICE-OPTIONS.md](docs/SPICE-OPTIONS.md) for the full option
+reference.
 
-### virglrenderer
+## What this does not do
 
-Virtual GPU renderer using akihikodaki's macOS fork.
+**There is no GPU acceleration, and there cannot be on macOS.** QEMU's SPICE GL
+path is gated on `HAVE_SPICE_GL`, which requires `CONFIG_OPENGL && CONFIG_GBM`
+(see `include/ui/spice-display.h`). GBM is a Mesa/DRM component that does not
+exist on macOS. Concretely, on any macOS QEMU build:
 
-### libepoxy-egl
+| Attempt | Result |
+|---|---|
+| `-spice gl=on` | `Invalid parameter 'gl'` — the option is not even registered |
+| `-display cocoa,gl=on` | `OpenGL is not supported by display backend 'cocoa'` |
+| `-device virtio-gpu-gl` | `The display backend does not have OpenGL support enabled` |
+| `-display egl-headless` | `egl: not available on this platform` |
 
-OpenGL function pointer library with EGL patches for macOS.
+Earlier versions of this tap built patched `libepoxy-egl` and `virglrenderer`
+formulas to chase this. They could not work and have been removed. See
+[docs/KNOWN-ISSUES.md](docs/KNOWN-ISSUES.md).
+
+**HVF only accelerates a guest whose architecture matches the host.** On Apple
+Silicon `qemu-system-aarch64 -accel hvf` is fast; `qemu-system-x86_64 -accel
+hvf` fails outright with `invalid accelerator hvf`. x86_64 guests on Apple
+Silicon run under TCG emulation and are slow.
+
+If you want a GPU-accelerated VM on Apple Silicon, use
+[UTM](https://mac.getutm.app/) or Virtualization.framework instead of QEMU.
+
+## Included targets
+
+The formula builds six system targets rather than core's full set, because this
+tap has no bottles and every install compiles from source:
+
+`aarch64` · `arm` · `i386` · `riscv32` · `riscv64` · `x86_64`
+
+## Staying current with homebrew-core
+
+The formula is homebrew-core's `qemu` with the SPICE changes confined to blocks
+marked `SPICE divergence`. To check whether core has moved:
+
+```bash
+make sync-check
+```
+
+It compares version, sha256, dependencies and configure arguments against
+core's live formula, ignores the intentional SPICE differences, and exits
+non-zero on drift. CI runs it weekly and opens the report in the job log.
+
+When it reports drift, copy the changed lines from
+[core's qemu.rb](https://github.com/Homebrew/homebrew-core/blob/master/Formula/q/qemu.rb)
+into `Formula/qemu-spice.rb`, leaving the `SPICE divergence` blocks alone.
+
+## Development
+
+```bash
+make help          # list targets
+make sync-check    # drift vs homebrew-core
+make style         # brew style
+make audit         # brew style + brew audit --strict
+make install       # build from source
+make test          # formula tests + SPICE smoke checks
+make verify        # full verification script
+make status        # what is installed and linked
+```
 
 ## Documentation
 
-- [Installation Guide](docs/INSTALL.md) - Detailed installation and troubleshooting
-- [Known Issues](docs/KNOWN-ISSUES.md) - Known issues and workarounds
-- [Changelog](CHANGELOG.md) - Version history
-
-## Differences from Standard Homebrew QEMU
-
-| Feature | homebrew/core/qemu | This Tap |
-|---------|-------------------|----------|
-| SPICE protocol | No | Yes |
-| virglrenderer | No | Yes |
-| EGL/OpenGL on macOS | No | Yes |
-| ARM64 optimizations | Basic | Advanced |
-| Audio passthrough | Limited | CoreAudio + HDA |
-
-## Common Operations
-
-### SSH into VM
-
-```bash
-# With port forwarding (hostfwd=tcp::2222-:22)
-ssh -p 2222 user@localhost
-```
-
-### Connect via SPICE
-
-```bash
-# Install viewer
-brew install virt-viewer
-
-# Connect
-remote-viewer spice://localhost:5900
-```
-
-### USB Passthrough
-
-```bash
-# Find USB device
-system_profiler SPUSBDataType
-
-# Add to QEMU command
--device usb-host,vendorid=0x1234,productid=0x5678
-```
-
-## Resource Allocation
-
-Leave 25-30% of CPU cores and RAM for macOS.
-
-Example allocations:
-
-- 8-core system: Use 4-6 cores, leave 2-4 for macOS
-- 16-core system: Use 8-12 cores, leave 4-8 for macOS
-
-Memory:
-
-- Light workload: 8GB
-- Development: 16GB
-- Heavy workload: 24-32GB
-
-## Demo
-
-Try the included **Debian multimedia demo** to see QEMU + SPICE in action:
-
-```bash
-./scripts/demo-debian.sh
-```
-
-This downloads a Debian 13 cloud image (~380MB) and boots it with:
-
-- HVF acceleration (native Apple Silicon)
-- VirGL GPU acceleration
-- Audio/video playback capabilities
-- Full multimedia package support
-
-**Alpine alternative:** For a minimal test, use `./scripts/demo-alpine.sh` (50MB ISO)
-
-## SPICE Remote Access
-
-QEMU is built with SPICE protocol support for remote access. To use it:
-
-### 1. Start QEMU with SPICE server
-
-```bash
-qemu-system-aarch64 \
-  -machine virt,accel=hvf -cpu host -smp 2 -m 2G \
-  -device qxl-vga \
-  -spice port=5900,addr=127.0.0.1,disable-ticketing=on \
-  -device virtio-serial-pci \
-  -device virtserialport,chardev=spicechannel0,name=com.redhat.spice.0 \
-  -chardev spicevmc,id=spicechannel0,name=vdagent \
-  -drive file=disk.qcow2,if=virtio \
-  -display none
-```
-
-### 2. Connect with a SPICE client
-
-**Linux/Windows:** Use `remote-viewer` or `virt-viewer`:
-
-```bash
-remote-viewer spice://localhost:5900
-```
-
-**macOS:** No native SPICE client available. Options:
-
-- Use `-display cocoa` for local display (recommended for macOS)
-- Use `-display spice-app` for built-in SPICE viewer (limited features)
-- Connect from a Linux/Windows client over the network
-
-**Note:** SPICE GL (`-spice gl=on`) requires Linux with X11/Wayland and is not available on macOS. GPU acceleration on macOS works through VirGL with Cocoa display instead.
-
-## Troubleshooting
-
-### QEMU not found
-
-```bash
-which qemu-system-x86_64
-# Should be /opt/homebrew/bin/qemu-system-x86_64
-```
-
-### HVF not available
-
-```bash
-# Check HVF support
-sysctl kern.hv_support
-# Should return 1
-```
-
-### VM is slow
-
-Ensure HVF acceleration is enabled:
-
-```bash
-qemu-system-x86_64 -accel help | grep hvf
-# Should show "hvf"
-```
-
-## License
-
-- Formulas: BSD-2-Clause (this repository)
-- QEMU: GPL-2.0-only
-- SPICE: LGPL-2.1-or-later
-- virglrenderer: MIT
-- libepoxy: MIT
-
-See [LICENSE](LICENSE) for details.
+- [docs/INSTALL.md](docs/INSTALL.md) — installation and troubleshooting
+- [docs/SPICE-OPTIONS.md](docs/SPICE-OPTIONS.md) — SPICE option reference
+- [docs/KNOWN-ISSUES.md](docs/KNOWN-ISSUES.md) — limitations, including the GL story
+- [CHANGELOG.md](CHANGELOG.md) — version history
 
 ## Credits
 
-Based on [avoidik/homebrew-qemu-spice](https://github.com/avoidik/homebrew-qemu-spice) with enhancements for Apple Silicon.
+Originally based on [avoidik/homebrew-qemu-spice](https://github.com/avoidik/homebrew-qemu-spice).
+The formula now tracks [homebrew-core's qemu](https://github.com/Homebrew/homebrew-core/blob/master/Formula/q/qemu.rb)
+directly.
 
-Optimized by stuffbucket (2025).
+## License
+
+See [LICENSE](LICENSE). QEMU itself is GPL-2.0-only.

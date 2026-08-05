@@ -1,5 +1,5 @@
 #!/bin/bash
-# Demo script: Boot Alpine Linux with GPU acceleration
+# Demo script: Boot Alpine Linux under QEMU (HVF-accelerated on Apple Silicon)
 # Demonstrates QEMU-SPICE working with native macOS display
 
 set -e
@@ -53,7 +53,7 @@ if [[ $(uname -m) == "arm64" ]]; then
     GPU_DEVICE="virtio-gpu-pci"
     DISPLAY_ARGS="-display cocoa,show-cursor=on"
     # Need UEFI firmware for ARM to boot Alpine
-    BIOS_ARGS="-bios /opt/homebrew/Cellar/qemu-spice/10.1.2/share/qemu/edk2-aarch64-code.fd"
+    BIOS_ARGS="-bios $(dirname "$(command -v qemu-system-aarch64)")/../share/qemu/edk2-aarch64-code.fd"
     echo -e "${GREEN}✓${NC} Running on Apple Silicon - using HVF acceleration"
 else
     QEMU_BIN="qemu-system-x86_64"

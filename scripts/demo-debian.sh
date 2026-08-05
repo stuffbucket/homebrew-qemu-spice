@@ -19,14 +19,14 @@ case "$ARCH" in
         MACHINE_ARGS="-machine virt,accel=hvf -cpu host"
         GPU_DEVICE="virtio-gpu-pci"
         # UEFI firmware for ARM
-        BIOS_ARGS="-bios /opt/homebrew/Cellar/qemu-spice/10.1.2/share/qemu/edk2-aarch64-code.fd"
+        BIOS_ARGS="-bios $(dirname "$(command -v qemu-system-aarch64)")/../share/qemu/edk2-aarch64-code.fd"
         ;;
     x86_64|amd64)
         QEMU_ARCH="x86_64"
         DEBIAN_ARCH="amd64"
         QEMU_BIN="qemu-system-x86_64"
         MACHINE_ARGS="-machine q35,accel=hvf"
-        GPU_DEVICE="virtio-vga-gl"
+        GPU_DEVICE="virtio-vga"
         BIOS_ARGS=""
         ;;
     *)

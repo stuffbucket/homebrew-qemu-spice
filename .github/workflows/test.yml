@@ -1,60 +1,109 @@
-name: Test Formulas
+name: Test Formula
 
 on:
   push:
     paths:
       - "Formula/**"
+      - "scripts/**"
+      - "Makefile"
       - ".github/workflows/test.yml"
   pull_request:
     paths:
       - "Formula/**"
+      - "scripts/**"
+      - "Makefile"
       - ".github/workflows/test.yml"
+  schedule:
+    # Weekly drift check against homebrew-core. Wednesday 06:17 UTC — an
+    # off-peak minute rather than the top of the hour.
+    - cron: "17 6 * * 3"
+  workflow_dispatch:
 
 jobs:
-  audit:
-    name: Audit Formulas
+  style:
+    name: Style and shell syntax
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
       - name: Set up Homebrew
         uses: Homebrew/actions/setup-homebrew@master
 
-      - name: Check Ruby style
-        run: |
-          brew style Formula/*.rb
+      - name: brew style
+        run: brew style Formula/qemu-spice.rb
 
-      - name: Audit formulas (informational only)
-        continue-on-error: true
+      - name: Shell syntax
         run: |
-          echo "Running audit (warnings expected for tap formulas)..."
-          brew audit Formula/*.rb
-
-  quick-test:
-    name: Quick Syntax Test
-    runs-on: macos-14
-    needs: audit
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Test formula parsing
-        run: |
-          echo "=== Testing formula syntax ==="
-          for formula in Formula/*.rb; do
-            echo "Checking $formula..."
-            brew info --json=v2 "$formula" > /dev/null
+          for f in scripts/*.sh; do
+            echo "checking $f"
+            bash -n "$f"
           done
 
-      - name: Check dependencies
-        run: |
-          echo "=== Checking formula dependencies ==="
-          brew deps --tree Formula/qemu-spice.rb
+  sync-check:
+    name: Drift vs homebrew-core
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
 
-      - name: Verify Makefile
+      # Reports when homebrew-core's qemu has moved (version, sha256, deps or
+      # configure args), and when core adds spice-server itself — which would
+      # make this tap unnecessary. The weekly scheduled run is the one worth
+      # watching.
+      - name: Check drift
+        run: bash scripts/sync-check.sh
+
+  formula:
+    name: Formula parses and audits (macOS)
+    runs-on: macos-14
+    needs: style
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Link tap
         run: |
-          echo "=== Checking build system ==="
-          test -f Makefile && echo "✓ Makefile present" || \
-            (echo "Error: Makefile not found" && exit 1)
-          make help
+          TAPDIR="$(brew --repository)/Library/Taps/stuffbucket/homebrew-qemu-spice"
+          mkdir -p "$(dirname "$TAPDIR")"
+          ln -sfn "$PWD" "$TAPDIR"
+
+      - name: brew info
+        run: brew info stuffbucket/qemu-spice/qemu-spice
+
+      - name: brew audit --strict
+        run: brew audit --strict stuffbucket/qemu-spice/qemu-spice
+
+      - name: Dependency tree
+        run: brew deps --tree stuffbucket/qemu-spice/qemu-spice
+
+      - name: make help
+        run: make help
+
+  # Building QEMU from source takes 10-20 minutes, so it does not run on every
+  # push. Trigger manually via workflow_dispatch when the formula changes
+  # materially, or before tagging a release.
+  build:
+    name: Build and verify (macOS)
+    runs-on: macos-14
+    needs: formula
+    if: github.event_name == 'workflow_dispatch'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Link tap
+        run: |
+          TAPDIR="$(brew --repository)/Library/Taps/stuffbucket/homebrew-qemu-spice"
+          mkdir -p "$(dirname "$TAPDIR")"
+          ln -sfn "$PWD" "$TAPDIR"
+
+      - name: Unlink core qemu if present
+        run: brew unlink qemu || true
+
+      - name: Build from source
+        run: brew install --build-from-source stuffbucket/qemu-spice/qemu-spice
+
+      - name: brew test
+        run: brew test stuffbucket/qemu-spice/qemu-spice
+
+      # GitHub's macOS runners are virtualised and do not expose HVF, so the
+      # verification script falls back to TCG for the live SPICE test.
+      - name: Verify installation
+        run: bash scripts/verify-installation.sh
