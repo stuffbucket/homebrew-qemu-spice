@@ -44,7 +44,7 @@ make verify
 or by hand:
 
 ```bash
-qemu-system-aarch64 --version              # expect 11.0.3
+qemu-system-aarch64 --version              # expect 11.1.2
 qemu-system-aarch64 -spice help            # must list spice options
 qemu-system-aarch64 -accel help            # must include hvf
 ```
