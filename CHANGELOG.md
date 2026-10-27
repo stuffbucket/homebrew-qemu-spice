@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.1.0] - 2026-10-27
+
+### Changed
+
+- **`qemu-spice` tracks homebrew-core's `qemu` 11.1.2** (was 11.0.3). 11.1 has
+  QEMU commit a86024eb2d ("target/arm/hvf: Fix WFI halting to stop idle vCPU
+  spinning"), which 11.0.x never received. On 11.0.x an HVF guest waiting in
+  `wfi` for its virtual timer could miss the interrupt for good and a vCPU
+  spun at 100%. Seen as edk2 stopping on "Start boot option" after roughly
+  one in ten guest-initiated reboots of a Windows 11 ARM64 guest.
+- Adopted core's changes since 11.0.3: `compatibility_version 1`, `bison` and
+  `python@3.15` as build dependencies, the `pythondeps.toml` wheel edit,
+  `--disable-hvf` on Sonoma and older, `--disable-pvg` on Golden Gate and newer,
+  and `deny_network_access!`.
+
 ## [2.0.0] - 2026-08-04
 
 Rewrite. The tap is now a thin, tracked derivative of homebrew-core's `qemu`
